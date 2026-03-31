@@ -1,0 +1,29 @@
+# Ignore output folders
+assets/
+output/
+downloads/
+temp/
+allfiles.txt
+automation.log
+client_secrets.json
+token.json
+upload_manifest.json
+
+
+
+
+# Ignore media files
+*.mp4
+*.mov
+*.avi
+*.mkv
+*.mp3
+
+
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Env files
+.env
