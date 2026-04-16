@@ -1,29 +1,45 @@
-# Ignore output folders
-assets/
-output/
-downloads/
-temp/
-allfiles.txt
-automation.log
+# ── SECRETS (NEVER commit these) ──────────────────
 client_secrets.json
-token.json
-upload_manifest.json
-
-
-
-
-# Ignore media files
+client_secrets_*.json
+token*.json
+.env
+secrets.json
+accounts
+___Extra videos/
 *.mp4
-*.mov
-*.avi
-*.mkv
-*.mp3
+*.webm
+channel_cache.json
+output/
 
 
 
-# Python cache
+
+# ── Generated data ─────────────────────────────────
+channels.json
+checkpoint.json
+upload_manifest.json
+processed_videos.json
+viral_learnings.json
+trend_cache.json
+automation.log
+channels_cache.json
+viral_history.json
+settings.json
+
+# ── Downloaded media ───────────────────────────────
+output/
+assets/music/
+viral_scrape/
+
+# ── Python ────────────────────────────────────────
 __pycache__/
 *.pyc
+*.pyo
+dist/
+build/
+.json
 
-# Env files
-.env
+# ── OS ────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini

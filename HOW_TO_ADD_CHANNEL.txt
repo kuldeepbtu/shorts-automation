@@ -1,0 +1,30 @@
+HOW TO ADD A YOUTUBE CHANNEL
+==============================
+
+STEP 1 — Create a folder
+  Name it anything (this name shows in the menu)
+  Example: C:\ShortsBot\accounts\MyGamingChannel\
+
+STEP 2 — Drop your client_secrets.json inside
+  Example: C:\ShortsBot\accounts\MyGamingChannel\client_secrets.json
+
+STEP 3 — Optional: add settings.json for niche
+  Create a file called settings.json with:
+  {"niche": "gaming"}
+
+  Available niches:
+    general, fitness, cooking, finance, gaming,
+    motivation, tech, education, bhajan
+
+STEP 4 — Run the script
+  python pipeline.py
+  The script scans this folder automatically.
+  Browser opens → sign in → token.json saved.
+  Your channel appears in the menu with its real YouTube name.
+
+FILES CREATED AUTOMATICALLY (don't delete):
+  token.json   — your login session, recreated if deleted
+
+FILES YOU CREATE:
+  client_secrets.json  — from Google Cloud Console (REQUIRED)
+  settings.json        — your channel niche (OPTIONAL)
