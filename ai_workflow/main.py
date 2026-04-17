@@ -69,9 +69,10 @@ def _scan_ai_channels() -> list[dict]:
             channels.append({
                 "folder"      : folder,
                 "name"        : folder.name,
+                "real_name"   : folder.name,         # needed by upload_all + Telegram
                 "folder_name" : folder.name,
                 "secrets_path": folder / "client_secrets.json",
-                "token_path"  : folder / "token.json",
+                "token_path"  : str(folder / "token.json"),  # upload_all uses this
                 "niche"       : saved_key or "not_set",
                 "niche_label" : niche_label,
             })
@@ -112,10 +113,10 @@ def _print_banner():
     steps = [
         "1. Niche Selection    7.  Assembly + BGM",
         "2. Topic Idea         8.  Auto Subtitles (ffmpeg)",
-        "3. Script Writing     9.  AI Thumbnail",
+        "3. Script Writing     9.  AI Thumbnail (Nano Banana 2)",
         "4. Voice (ElevenLabs/EdgeTTS)   10. SEO Metadata",
-        "5. AI Images          11. YouTube Upload",
-        "6. Veo3 HD Videos (key rotation across AI Studio keys)",
+        "5. AI Images (gemini-3.1-flash-image-preview)",
+        "6. Veo 3.1 HD Videos  11. YouTube Upload",
     ]
     for s in steps:
         print(f"{C.CYAN}║{C.RESET}  {s:<{w-2}}{C.CYAN}║{C.RESET}")
