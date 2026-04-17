@@ -2946,6 +2946,15 @@ def main():
     print(f"  ⚡ Encoder   : {_enc_lbl}")
     print(f"  🔔 Telegram  : {_tg_lbl}\n")
 
+    workflow_choice = menu("SELECT WORKFLOW", ["Manual Workflow (Current Pipeline)", "Complete AI Workflow (Fully Automated)"])
+    if workflow_choice == 2:
+        try:
+            from ai_workflow import main as ai_main
+            ai_main.run()
+        except ImportError as e:
+            print(f"❌ Failed to load AI Workflow: {e}")
+        return
+
     # ─────────────────────────────────────────────────────────────────────────
     #  RESUME vs FRESH START
     #
