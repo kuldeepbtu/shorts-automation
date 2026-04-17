@@ -1,77 +1,16 @@
 """
-<<<<<<< HEAD
-ShortsBot  pipeline.py  v10  — Accounts Folder Edition
-========================================================
-Run:  python pipeline.py   (no arguments needed)
-
-CHANNEL SETUP — DROP-IN FOLDER SYSTEM:
-  C:/ShortsBot/
-  └── accounts/
-      ├── MyMainChannel/
-      │   └── client_secrets.json   drop this file here
-      ├── MyFitnessChannel/
-      │   └── client_secrets.json
-      └── MyCookingChannel/
-          └── client_secrets.json
-
-  HOW IT WORKS:
-  1. Create a folder inside accounts/ named after your channel
-  2. Drop your client_secrets.json file inside that folder
-  3. Run python pipeline.py
-  4. Script scans all folders, authenticates each one, fetches real channel names
-  5. You pick which channel to upload to — done
-
-  OPTIONAL: add a settings.json file in the channel folder to set niche:
-  {"niche": "fitness"}   ← without this, script asks you to pick
-
-HIERARCHY:
-  Start → channel folder scan → pick channel → pick mode → process → upload → cleanup
-
-10-DAY MONETIZATION STRATEGY (built-in):
-  Day 1-2: Viral copy 3 Shorts/day
-  Day 3-4: 3 Shorts + 1 long video (watch hours)
-  Day 5-6: Reply ALL comments within 2h (5x algorithm boost)
-  Day 7-8: 3 Shorts + 1 long video
-  Day 9-10: 3 Shorts/day + pin comment on every upload
-  Target: 1000 subs + 4000 watch hours = YouTube Partner Program
+ShortsBot Pipeline - Ultimate Edition (Merged)
+=============================================================
+Full Automation Pipeline with Failover System & Deluxe Features
 """
 
-import json, time, random, shutil, logging, subprocess, textwrap, sys
-import urllib.request, urllib.parse, os
-=======
-YouTube Shorts Automation Pipeline  —  Ultimate Edition  (Windows)
-====================================================================
-NEW FEATURES in this version:
-  ✅ Progress bars + percentage for every task
-  ✅ Auto-delete source video after Shorts uploaded, save URL/name to log
-  ✅ AI-enhanced titles, descriptions, unique hashtags per video
-  ✅ Viral Shorts scraper — download top 10 most viewed Shorts from any channel
-     and learn their metadata to write better titles/descriptions/hashtags
-  ✅ Lossless video quality — no compression on original footage
-  ✅ Multi-account support — choose which YouTube channel to upload to
-  ✅ Resume from last step if script was interrupted
-  ✅ 20+ free music tracks auto-downloaded from multiple sources
-
-AI Stack:
-  Captions    → Groq Whisper Large v3 Turbo   (free)
-  Titles/Tags → Google Gemini 2.5 Flash        (free)
-  Music       → Jamendo + Bensound + ccMixter  (all free)
-"""
-
-import os, json, time, random, shutil, logging, argparse
-import urllib.request, urllib.parse, subprocess, textwrap, sys, re
->>>>>>> 64497acc2905e2ab02e72faaffb871464a15f9a7
+import os, json, time, random, shutil, logging, argparse, subprocess, textwrap, sys, re, urllib.request, urllib.parse
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
-
-<<<<<<< HEAD
-# ── Config import ──────────────────────────────────────────────────────────────
 try:
     from dotenv import load_dotenv
     load_dotenv()
-except ImportError:
-    print("\n❌  python-dotenv not installed. Run: pip install python-dotenv\n")
-    pass
+except ImportError: pass
 
 # ── Paths ──────────────────────────────────────────────────────────────────────
 # BASE_DIR = folder where pipeline.py lives (works wherever you put it)
@@ -88,7 +27,7 @@ DESKTOP      = Path.home() / "Desktop" / "upload_manifest.json"
 PROCESSED_DB = BASE_DIR / "processed_videos.json"
 CHECKPOINT   = BASE_DIR / "checkpoint.json"
 CHANNELS_DB  = BASE_DIR / "channels_cache.json"
-WINDOWS_FONT = r"C\:/Windows/Fonts/arialbd.ttf"
+WINDOWS_FONT = r"C:/Windows/Fonts/arialbd.ttf"
 
 # IMPORTANT: Include youtube.readonly so channels.list(mine=True) returns ALL channels
 YT_SCOPES = [
@@ -100,41 +39,18 @@ YT_SCOPES = [
 for d in [BASE_DIR, ACCOUNTS_DIR, RAW_DIR, SHORTS_DIR, VIDEOS_DIR, MUSIC_DIR, THUMB_DIR]:
     d.mkdir(parents=True, exist_ok=True)
 
-=======
-# ══════════════════════════════════════════════════════════════════════════════
-#  WINDOWS PATHS
-# ══════════════════════════════════════════════════════════════════════════════
-BASE_DIR      = Path(r"C:\ShortsBot")
-OUTPUT_DIR    = BASE_DIR / "output"
-RAW_DIR       = OUTPUT_DIR / "raw"
-SHORTS_DIR    = OUTPUT_DIR / "shorts"
-MUSIC_DIR     = BASE_DIR / "assets" / "music"
-LOG_FILE      = BASE_DIR / "automation.log"
-MANIFEST      = BASE_DIR / "upload_manifest.json"
-DESKTOP       = Path.home() / "Desktop" / "upload_manifest.json"
-PROCESSED_DB  = BASE_DIR / "processed_videos.json"   # tracks deleted source vids
-CHECKPOINT    = BASE_DIR / "checkpoint.json"           # resume from last step
-ACCOUNTS_FILE = BASE_DIR / "accounts.json"            # multi-account credentials
-VIRAL_DB      = BASE_DIR / "viral_learnings.json"     # learned from viral Shorts
-WINDOWS_FONT  = r"C\:/Windows/Fonts/arialbd.ttf"
-
-# ══════════════════════════════════════════════════════════════════════════════
-#  LOGGING
-# ══════════════════════════════════════════════════════════════════════════════
-BASE_DIR.mkdir(parents=True, exist_ok=True)
->>>>>>> 64497acc2905e2ab02e72faaffb871464a15f9a7
+# ── Logging ────────────────────────────────────────────────────────────────────
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
+    format="%(asctime)s  %(levelname)-8s  %(message)s",
+    datefmt="%H:%M:%S",
     handlers=[
-        logging.FileHandler(str(LOG_FILE), encoding="utf-8"),
+        logging.FileHandler(LOG_FILE, encoding="utf-8"),
         logging.StreamHandler(sys.stdout),
     ],
 )
-log = logging.getLogger(__name__)
+log = logging.getLogger("ShortsBot")
 
-# ══════════════════════════════════════════════════════════════════════════════
-<<<<<<< HEAD
 #  NICHE HASHTAGS
 # ══════════════════════════════════════════════════════════════════════════════
 NICHE_TAGS = {
@@ -172,7 +88,7 @@ def get_tags(niche: str, i: int, trending: list = None) -> list:
 # ══════════════════════════════════════════════════════════════════════════════
 
 # ANSI colour codes (Windows 10+ supports these natively in PowerShell / Terminal)
-# Falls back silently on older systems — the progress bar still works, just no colour
+# Falls back silently on older systems - the progress bar still works, just no colour
 class C:
     RESET   = "\033[0m"
     BOLD    = "\033[1m"
@@ -200,6 +116,60 @@ def _enable_ansi():
             pass
 
 _enable_ansi()
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  GPU ENCODER DETECTION
+#  Probes ffmpeg at startup for NVIDIA / AMD / Intel hardware encoders.
+#  Falls back to CPU libx264 automatically if none found.
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _detect_gpu_encoder() -> tuple:
+    """
+    Probe ffmpeg for available hardware H.264 encoders.
+    Returns (encoder_name, preset, hw_flags_list).
+      NVIDIA  → h264_nvenc  | AMD → h264_amf | Intel → h264_qsv | CPU → libx264
+    """
+    try:
+        out = subprocess.run(
+            ["ffmpeg", "-hide_banner", "-encoders"],
+            capture_output=True, text=True, timeout=10
+        ).stdout
+        if "h264_nvenc" in out:
+            log.info("[GPU] ⚡ NVIDIA detected — using h264_nvenc (hardware accelerated, ~8x faster)")
+            return ("h264_nvenc", "p4", [])
+        if "h264_amf" in out:
+            log.info("[GPU] ⚡ AMD detected — using h264_amf (hardware accelerated)")
+            return ("h264_amf", "balanced", [])
+        if "h264_qsv" in out:
+            log.info("[GPU] ⚡ Intel QSV detected — using h264_qsv (hardware accelerated)")
+            return ("h264_qsv", "medium", [])
+    except Exception:
+        pass
+    log.info("[GPU] No hardware encoder found — using libx264 (CPU)")
+    return ("libx264", "slow", [])
+
+
+_FFMPEG_ENCODER, _FFMPEG_PRESET, _FFMPEG_HW_FLAGS = _detect_gpu_encoder()
+
+
+def _gpu_encode_flags(crf: int = 18) -> list:
+    """
+    Return quality-control flags for the detected encoder.
+    libx264 → -crf <n> -preset slow
+    NVENC   → -rc vbr -cq <n> -preset p4 -b:v 0
+    AMF     → -quality balanced -rc vbr_peak -qp_i <n>
+    QSV     → -global_quality <n> -preset medium
+    """
+    enc = _FFMPEG_ENCODER
+    if enc == "libx264":
+        return ["-crf", str(crf), "-preset", _FFMPEG_PRESET]
+    if enc == "h264_nvenc":
+        return ["-rc", "vbr", "-cq", str(crf), "-preset", _FFMPEG_PRESET, "-b:v", "0"]
+    if enc == "h264_amf":
+        return ["-quality", _FFMPEG_PRESET, "-rc", "vbr_peak", "-qp_i", str(crf)]
+    if enc == "h264_qsv":
+        return ["-global_quality", str(crf), "-preset", _FFMPEG_PRESET]
+    return ["-crf", str(crf), "-preset", "slow"]
 
 
 def _fmt_eta(seconds: float) -> str:
@@ -229,10 +199,10 @@ def progress_bar(cur: int, tot: int, lbl: str = "", w: int = 32, bar_id: str = "
     Colourful animated progress bar with smart ETA.
 
     Colour changes by progress:
-      0–33%  → Blue
-      34–66% → Cyan
-      67–89% → Yellow / Magenta
-      90–99% → Green
+      0-33%  → Blue
+      34-66% → Cyan
+      67-89% → Yellow / Magenta
+      90-99% → Green
       100%   → Bold Green ✓
 
     ETA format:
@@ -348,7 +318,7 @@ def menu(title: str, options: list, prompt: str = "Enter number") -> int:
             n = int(raw)
             if 1 <= n <= len(options): return n
         except ValueError: pass
-        print(f"  ⚠  Enter a number 1–{len(options)}")
+        print(f"  ⚠  Enter a number 1-{len(options)}")
 
 def yn(q: str, default: bool = True) -> bool:
     hint = "(Y/n)" if default else "(y/N)"
@@ -374,83 +344,373 @@ def http_post_json(url: str, payload: dict, headers: dict) -> dict:
                                   headers=headers, method="POST")
     with urllib.request.urlopen(req, timeout=90) as r: return json.loads(r.read())
 
+# ══════════════════════════════════════════════════════════════════════════════
+#  TELEGRAM BOT  (upload notifications + remote control)
+#
+#  ONE-TIME SETUP (takes 2 minutes):
+#  1. Open Telegram → @BotFather → /newbot → follow prompts → copy token
+#  2. Start a chat with your new bot, then open:
+#     https://api.telegram.org/bot<YOUR_TOKEN>/getUpdates
+#     Copy the "id" value from the "chat" object
+#  3. Add to .env:
+#       TELEGRAM_BOT_TOKEN=1234567890:ABCdef...
+#       TELEGRAM_CHAT_ID=123456789
+#
+#  COMMANDS (send to your bot while the pipeline is running):
+#    /status  → show upload progress
+#    /pause   → pause between uploads
+#    /resume  → continue after pause
+#    /skip    → skip the next queued upload
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _tg_esc(s: str) -> str:
+    """Escape HTML special chars so Telegram HTML parse_mode doesn't break."""
+    return str(s).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+class TelegramNotifier:
+    """Zero-dependency Telegram Bot — uses only urllib (no pip install needed)."""
+
+    def __init__(self):
+        self.token    = os.getenv("TELEGRAM_BOT_TOKEN", "")
+        self.chat_id  = os.getenv("TELEGRAM_CHAT_ID",   "")
+        self.enabled  = bool(self.token and self.chat_id)
+        self._offset  = 0
+        self._paused  = False
+        self._skip    = False
+        self._stop    = False
+        self._queue_total   = 0
+        self._queue_done    = 0
+        self._current_title = ""
+        if self.enabled:
+            log.info("[Telegram] ✅ Bot enabled — notifications + remote control ON")
+        else:
+            log.info("[Telegram] ℹ  No token/chat_id — add TELEGRAM_BOT_TOKEN + "
+                     "TELEGRAM_CHAT_ID to .env to enable")
+
+    # ── Core API call ──────────────────────────────────────────────────────────
+    def _api(self, method: str, payload: dict = None) -> dict:
+        if not self.token: return {}
+        url = f"https://api.telegram.org/bot{self.token}/{method}"
+        try:
+            if payload:
+                return http_post_json(url, payload,
+                                      {"Content-Type": "application/json"})
+            return json.loads(http_get(url))
+        except Exception as e:
+            log.debug(f"[Telegram] API error ({method}): {e}")
+            return {}
+
+    def send_message(self, text: str):
+        """Send an HTML-formatted Telegram message to the configured chat."""
+        if not self.enabled: return
+        self._api("sendMessage", {
+            "chat_id"   : self.chat_id,
+            "text"      : text,
+            "parse_mode": "HTML",
+        })
+
+    # ── Rich upload notification ───────────────────────────────────────────────
+    def send_upload_notification(self, item: dict, vid_id: str,
+                                 scheduled_ist: str, num: int, total: int):
+        """Rich HTML message sent after every successful upload."""
+        if not self.enabled: return
+        is_short = item.get("mode") == "shorts"
+        url      = (f"https://youtube.com/shorts/{vid_id}" if is_short
+                    else f"https://www.youtube.com/watch?v={vid_id}")
+        icon     = "🩳" if is_short else "🎬"
+        kind     = "Short" if is_short else "Video"
+        comment  = _tg_esc(item.get("comment_prompt", ""))
+        title    = _tg_esc(item["title"][:80])
+        self._queue_done += 1
+        lines = [
+            f"{icon} <b>Upload #{num}/{total} — {kind}</b>",
+            "",
+            f"📌 <b>{title}</b>",
+            f"🔗 {url}",
+            f"📅 Goes live: <code>{scheduled_ist}</code>",
+            f"🎭 Mood: {item.get('mood', '?')}  🎵 Music: {item.get('music_track', 'none')}",
+        ]
+        if comment:
+            lines += ["", f"💬 <b>Pin this comment:</b>", f"<i>{comment[:200]}</i>"]
+        lines += ["", f"✅ {self._queue_done}/{self._queue_total} done"]
+        self.send_message("\n".join(lines))
+
+    # ── Session start / end ────────────────────────────────────────────────────
+    def send_session_start(self, channel_name: str, total: int, niche: str):
+        if not self.enabled: return
+        self._queue_total = total
+        self._queue_done  = 0
+        ch = _tg_esc(channel_name)
+        self.send_message(
+            f"🚀 <b>ShortsBot started</b>\n"
+            f"📺 Channel: <b>{ch}</b>\n"
+            f"🎯 Niche: {niche}\n"
+            f"📦 Queue: <b>{total} item(s)</b>\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"⌨️ Commands: /status /pause /skip /resume"
+        )
+
+    def send_session_end(self, uploaded: int, total: int):
+        if not self.enabled: return
+        self.send_message(
+            f"🎉 <b>Session complete!</b>\n"
+            f"✅ {uploaded}/{total} uploaded successfully\n"
+            f"📄 Check YouTube Studio for scheduled publish times."
+        )
+
+    # ── Background command polling ─────────────────────────────────────────────
+    def poll_forever(self):
+        """Listen for /status /pause /resume /skip from Telegram (daemon thread)."""
+        while not self._stop:
+            try:
+                resp = self._api("getUpdates", {
+                    "offset"         : self._offset,
+                    "timeout"        : 2,
+                    "allowed_updates": ["message"],
+                })
+                for upd in resp.get("result", []):
+                    self._offset = upd["update_id"] + 1
+                    msg     = upd.get("message", {})
+                    text    = msg.get("text", "").strip().lower()
+                    from_id = str(msg.get("chat", {}).get("id", ""))
+                    if from_id != str(self.chat_id): continue
+                    if text == "/status":
+                        state = "⏸ PAUSED" if self._paused else "▶️ Running"
+                        self.send_message(
+                            f"📊 <b>ShortsBot Status</b>\n"
+                            f"{state}\n"
+                            f"Progress: {self._queue_done}/{self._queue_total}\n"
+                            f"Current: <i>{_tg_esc(self._current_title[:60])}</i>"
+                        )
+                    elif text == "/pause":
+                        self._paused = True
+                        self.send_message("⏸ <b>Bot paused.</b> Send /resume to continue.")
+                    elif text == "/resume":
+                        self._paused = False
+                        self.send_message("▶️ <b>Bot resumed.</b>")
+                    elif text == "/skip":
+                        self._skip = True
+                        self.send_message("⏭ <b>Skipping next upload.</b>")
+                    elif text.startswith("/"):
+                        self.send_message(
+                            "🤖 <b>Available commands:</b>\n"
+                            "/status  — show progress\n"
+                            "/pause   — pause between uploads\n"
+                            "/resume  — continue after pause\n"
+                            "/skip    — skip next upload"
+                        )
+            except Exception:
+                pass
+            time.sleep(3)
+
+    def start_polling(self):
+        """Start Telegram polling in a background daemon thread (non-blocking)."""
+        if not self.enabled: return
+        import threading
+        t = threading.Thread(target=self.poll_forever, daemon=True, name="TelegramPoller")
+        t.start()
+        ok("Telegram bot polling active — send /status anytime from your phone")
+
+    def stop_polling(self):
+        self._stop = True
+
+    def wait_if_paused(self):
+        """Block the upload loop until /resume is received."""
+        if self._paused:
+            log.info("[Telegram] Upload loop paused — waiting for /resume ...")
+        while self._paused:
+            time.sleep(2)
+
+    def should_skip(self) -> bool:
+        """Returns True once if /skip was requested, then resets the flag."""
+        if self._skip:
+            self._skip = False
+            return True
+        return False
+
+
+# Global notifier instance — created at startup, used throughout the pipeline
+_TG = TelegramNotifier()
+
+
+# Per-key 429 blacklist — once a key exhausts quota it is skipped for the session
+_gemini_key_exhausted: set = set()
+
 def gemini(prompt: str, max_retries: int = 5) -> str:
     """
-    Call Gemini API with automatic retry + exponential backoff.
-    Seamlessly falls back to Groq (Llama 3.3 70B) if all Google quotas are exhausted.
+    Call Gemini API with smart per-key quota tracking + multi-provider fallback.
+
+    Fallback priority (auto, no config needed):
+      1. Gemini 2.0 Flash / Flash-Lite  (all AIza keys)
+      2. Groq – Llama 3.3 70B           (14,400 req/day FREE)
+      3. Cerebras – Llama 3.3 70B       (1,000 req/day FREE, ultra-fast)
+      4. OpenRouter – Llama 3.3 70B     (free tier, best quality)
+      5. Together AI – Llama 3.1 70B    ($25 free credit)
+      6. Mistral – mistral-small         (free tier)
+
+    Rules:
+      - Invalid keys (400/401/403) → silently blacklisted, never retried.
+      - Rate-limited keys (429)   → blacklisted for the session, next key tried immediately.
+      - Only waits when EVERY provider is exhausted simultaneously.
     """
-    models   = ["gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-flash-latest"]
-    waits    = [5, 15, 30, 60, 90]
-    last_err = None
+    # ── 1. Collect valid Gemini keys (must start with 'AIza') ─────────────────
+    raw_keys = []
+    k0 = os.getenv("GEMINI_API_KEY", "")
+    if k0: raw_keys.append(k0)
+    for i in range(2, 10):
+        k = os.getenv(f"GEMINI_API_KEY_{i}", "")
+        if k: raw_keys.append(k)
+    valid_gemini_keys = [k for k in raw_keys if k.startswith("AIza")]
 
-    keys = []
-    if os.getenv("GEMINI_API_KEY"): keys.append(os.getenv("GEMINI_API_KEY"))
-    for i in range(2, 6):
-        k = os.getenv(f"GEMINI_API_KEY_{i}")
-        if k: keys.append(k)
-        
-    if not keys: keys = [""]
+    gemini_models = ["gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-flash-latest"]
+    waits         = [15, 30, 60, 90, 120]
+    last_err      = None
 
-    # Configure attempt sequences
-    configs = [("gemini", m, k) for m in models for k in keys]
-    
-    groq_key = os.getenv("GROQ_API_KEY")
-    if groq_key:
-        configs.append(("groq", "llama-3.3-70b-versatile", groq_key))
+    # ── 2. Build ordered config list ─────────────────────────────────────────
+    # Each entry: (provider_name, model_id, api_key, endpoint)
+    all_configs = []
 
-    total_attempts = max_retries * len(configs)
+    # Gemini
+    for m in gemini_models:
+        for k in valid_gemini_keys:
+            all_configs.append(("gemini", m, k,
+                f"https://generativelanguage.googleapis.com/v1beta/models/{m}:generateContent"))
 
-    for attempt in range(total_attempts):
-        provider, current_model, current_key = configs[attempt % len(configs)]
-        
+    # OpenAI-compatible providers (Groq, Cerebras, OpenRouter, Together, Mistral)
+    _OAI_PROVIDERS = [
+        ("groq",
+         "llama-3.3-70b-versatile",
+         os.getenv("GROQ_API_KEY", ""),
+         "https://api.groq.com/openai/v1/chat/completions"),
+        ("cerebras",
+         "llama-3.3-70b",
+         os.getenv("CEREBRAS_API_KEY", ""),
+         "https://api.cerebras.ai/v1/chat/completions"),
+        ("openrouter",
+         "meta-llama/llama-3.3-70b-instruct:free",
+         os.getenv("OPENROUTER_API_KEY", ""),
+         "https://openrouter.ai/api/v1/chat/completions"),
+        ("together",
+         "meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo",
+         os.getenv("TOGETHER_API_KEY", ""),
+         "https://api.together.xyz/v1/chat/completions"),
+        ("mistral",
+         "mistral-small-latest",
+         os.getenv("MISTRAL_API_KEY", ""),
+         "https://api.mistral.ai/v1/chat/completions"),
+    ]
+    for prov, model, key, endpoint in _OAI_PROVIDERS:
+        if key:
+            all_configs.append((prov, model, key, endpoint))
+
+    if not all_configs:
+        raise RuntimeError(
+            "No AI provider configured.\n"
+            "Add at least one of these to .env:\n"
+            "  GEMINI_API_KEY   (https://aistudio.google.com/app/apikey)\n"
+            "  GROQ_API_KEY     (https://console.groq.com/keys)\n"
+            "  CEREBRAS_API_KEY (https://cloud.cerebras.ai)\n"
+            "  OPENROUTER_API_KEY (https://openrouter.ai)"
+        )
+
+    total_attempts = max_retries * len(all_configs)
+    cycle_logged   = set()
+
+    attempt = 0
+    while attempt < total_attempts:
+        config_idx = attempt % len(all_configs)
+        provider, current_model, current_key, endpoint = all_configs[config_idx]
+
+        # Skip blacklisted keys
+        if (provider, current_key) in _gemini_key_exhausted:
+            attempt += 1
+            continue
+
         try:
             if provider == "gemini":
-                url = f"https://generativelanguage.googleapis.com/v1beta/models/{current_model}:generateContent"
                 resp = http_post_json(
-                    url,
+                    endpoint,
                     {"contents": [{"parts": [{"text": prompt}]}]},
                     {"Content-Type": "application/json", "x-goog-api-key": current_key}
                 )
                 return resp["candidates"][0]["content"]["parts"][0]["text"].strip()
-                
-            elif provider == "groq":
-                url = "https://api.groq.com/openai/v1/chat/completions"
+
+            else:
+                # All other providers use OpenAI-compatible chat completions
+                extra_headers = {}
+                if provider == "openrouter":
+                    extra_headers["HTTP-Referer"] = "https://github.com/ShortsBot"
                 resp = http_post_json(
-                    url,
-                    {"model": current_model, "messages": [{"role": "user", "content": prompt}]},
-                    {"Content-Type": "application/json", "Authorization": f"Bearer {current_key}"}
+                    endpoint,
+                    {"model": current_model,
+                     "messages": [{"role": "user", "content": prompt}],
+                     "max_tokens": 1024},
+                    {"Content-Type": "application/json",
+                     "Authorization": f"Bearer {current_key}",
+                     **extra_headers}
                 )
                 return resp["choices"][0]["message"]["content"].strip()
 
         except Exception as e:
             last_err = e
-            
-            # Rapid jump to next config on ANY API error before ever blocking/waiting
-            if len(configs) > 1 and (attempt + 1) % len(configs) != 0:
-                next_prov, next_model, next_key = configs[(attempt + 1) % len(configs)]
-                if next_prov == "gemini":
-                    k_idx = keys.index(next_key) + 1 if next_key in keys else 1
-                    print(f"\n  {C.YELLOW}API limit hit... switching to {next_model} (Key #{k_idx}){C.RESET}")
-                else:
-                    print(f"\n  {C.YELLOW}Gemini exhausted! Falling back to Groq ({next_model})...{C.RESET}")
-                time.sleep(1)
+            status   = getattr(e, "code", None)
+            if status is None:
+                try:
+                    status = int(str(e).split("HTTP Error ")[1].split(":")[0])
+                except Exception:
+                    status = 500
+
+            if status in (400, 401, 403):
+                # Invalid / unauthorized key — blacklist silently
+                _gemini_key_exhausted.add((provider, current_key))
+                attempt += 1
                 continue
-                
-            cycle = attempt // len(configs)
-            wait = waits[min(cycle, len(waits) - 1)]
-            print(f"\n  {C.YELLOW}All AI providers rate-limited — waiting {wait}s "
-                  f"(retry {cycle+1}/{max_retries})...{C.RESET}")
-            for rem in range(wait, 0, -1):
-                sys.stdout.write(f"\r  {C.DIM}  resuming in {rem:3d}s ...{C.RESET}  ")
-                sys.stdout.flush()
-                time.sleep(1)
-            sys.stdout.write("\r" + " "*40 + "\r"); sys.stdout.flush()
+
+            if status == 429:
+                # Quota hit — blacklist this key, jump to next available
+                _gemini_key_exhausted.add((provider, current_key))
+                next_available = None
+                for j in range(1, len(all_configs) + 1):
+                    np_, nm, nk, _ = all_configs[(config_idx + j) % len(all_configs)]
+                    if (np_, nk) not in _gemini_key_exhausted:
+                        next_available = (np_, nm)
+                        break
+                if next_available:
+                    np_, nm = next_available
+                    label = nm if np_ == "gemini" else np_.capitalize()
+                    print(f"  {C.YELLOW}⚡ Rate limit → switching to {label}{C.RESET}")
+                    time.sleep(1)
+                else:
+                    # Every provider is exhausted — cooldown then retry all
+                    cycle = attempt // len(all_configs)
+                    if cycle not in cycle_logged:
+                        cycle_logged.add(cycle)
+                        wait = waits[min(cycle, len(waits) - 1)]
+                        print(f"\n  {C.YELLOW}⏳ All AI providers rate-limited — "
+                              f"waiting {wait}s (retry {cycle+1}/{max_retries})...{C.RESET}")
+                        for rem in range(wait, 0, -1):
+                            sys.stdout.write(f"\r     resuming in {rem:3d}s ...  ")
+                            sys.stdout.flush()
+                            time.sleep(1)
+                        sys.stdout.write("\r" + " " * 40 + "\r")
+                        sys.stdout.flush()
+                        _gemini_key_exhausted.clear()  # reset after cooldown
+                attempt += 1
+                continue
+
+            # 5xx / network error — brief pause, retry same key
+            time.sleep(2)
+            attempt += 1
             continue
 
-    raise last_err
+    if last_err:
+        raise last_err
+    raise RuntimeError("gemini(): exhausted all retries with no successful response")
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  CHECKPOINT
+
 # ══════════════════════════════════════════════════════════════════════════════
 def save_cp(d: dict):
     """
@@ -494,7 +754,7 @@ def ask_resume() -> dict | None:
     print(f"   Saved   : {saved_at}")
     if yn("Resume from last step?"):
         return cp
-    clear_cp()   # user said NO — delete stale checkpoint
+    clear_cp()   # user said NO - delete stale checkpoint
     return None
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -533,220 +793,6 @@ def _auth(secrets_file: str):
     Uses FULL scope including youtube.readonly so channels.list returns ALL channels.
     Deletes stale token and re-auths if refresh fails.
     """
-=======
-#  API KEYS
-# ══════════════════════════════════════════════════════════════════════════════
-GROQ_API_KEY   = "Your_api"
-JAMENDO_ID     = "Your_api"
-GEMINI_API_KEY = "Your_api"
-
-# ══════════════════════════════════════════════════════════════════════════════
-#  CONFIG
-# ══════════════════════════════════════════════════════════════════════════════
-CONFIG = {
-    "shorts_duration"      : 58,
-    "max_shorts_per_video" : 3,
-    "upload_interval_hours": 4,
-    "music_volume"         : 0.12,
-    "caption_fontsize"     : 52,
-    "youtube": {
-        "category_id"   : "22",
-        "privacy_status": "private",
-        "base_tags"     : ["shorts", "viral", "trending", "youtubeshorts",
-                           "fyp", "foryoupage", "explore", "subscribe",
-                           "reels", "entertainment"],
-    },
-    "jamendo_moods": ["energetic","happy","inspiring","motivational","upbeat","calm","dramatic"],
-
-    # 20 free music tracks from 3 sources
-    "bensound_tracks": [
-        {"name":"bs_energy.mp3",     "url":"https://www.bensound.com/bensound-music/bensound-energy.mp3"},
-        {"name":"bs_ukulele.mp3",    "url":"https://www.bensound.com/bensound-music/bensound-ukulele.mp3"},
-        {"name":"bs_littleidea.mp3", "url":"https://www.bensound.com/bensound-music/bensound-littleidea.mp3"},
-        {"name":"bs_sunny.mp3",      "url":"https://www.bensound.com/bensound-music/bensound-sunny.mp3"},
-        {"name":"bs_adventure.mp3",  "url":"https://www.bensound.com/bensound-music/bensound-adventure.mp3"},
-        {"name":"bs_dubstep.mp3",    "url":"https://www.bensound.com/bensound-music/bensound-dubstep.mp3"},
-        {"name":"bs_epic.mp3",       "url":"https://www.bensound.com/bensound-music/bensound-epic.mp3"},
-        {"name":"bs_summer.mp3",     "url":"https://www.bensound.com/bensound-music/bensound-summer.mp3"},
-    ],
-    "pixabay_tracks": [
-        {"name":"px_lofi.mp3",       "url":"https://cdn.pixabay.com/download/audio/2022/05/27/audio_1808fbf07a.mp3"},
-        {"name":"px_upbeat.mp3",     "url":"https://cdn.pixabay.com/download/audio/2022/03/10/audio_270f49c5e9.mp3"},
-        {"name":"px_motivate.mp3",   "url":"https://cdn.pixabay.com/download/audio/2021/11/25/audio_5b5bb9e0a6.mp3"},
-        {"name":"px_cinematic.mp3",  "url":"https://cdn.pixabay.com/download/audio/2022/01/18/audio_d0fd6a0f9e.mp3"},
-        {"name":"px_corporate.mp3",  "url":"https://cdn.pixabay.com/download/audio/2022/08/02/audio_884fe92c21.mp3"},
-        {"name":"px_happy.mp3",      "url":"https://cdn.pixabay.com/download/audio/2021/08/09/audio_dc39bde5b9.mp3"},
-    ],
-}
-
-# ══════════════════════════════════════════════════════════════════════════════
-#  PROGRESS BAR
-# ══════════════════════════════════════════════════════════════════════════════
-
-_pb_start: float = 0.0
-
-def progress_bar(current: int, total: int, label: str = "", width: int = 36):
-    """
-    Responsive live progress bar with percentage, elapsed + ETA.
-    Overwrites same line using carriage return — no scroll spam.
-    """
-    global _pb_start
-    if current == 0:
-        _pb_start = time.time()
-    pct    = int((current / max(total, 1)) * 100)
-    filled = int(width * current / max(total, 1))
-    bar    = "█" * filled + "░" * (width - filled)
-    elapsed = time.time() - _pb_start
-    if current > 0 and current < total:
-        eta = int(elapsed / current * (total - current))
-        time_str = f"ETA {eta}s"
-    elif current >= total:
-        time_str = f"done {elapsed:.1f}s"
-    else:
-        time_str = ""
-    spin = ["⠋","⠙","⠹","⠸","⠼","⠴","⠦","⠧","⠇","⠏"]
-    icon = spin[int(time.time()*8) % len(spin)] if current < total else "✓"
-    sys.stdout.write(f"\r  {icon} [{bar}] {pct:3d}%  {label[:28]:<28}  {time_str:<12}")
-    sys.stdout.flush()
-    if current >= total:
-        sys.stdout.write("\n")
-        sys.stdout.flush()
-
-
-def task_header(title: str):
-    """Print a bold section header."""
-    print(f"\n{'─'*60}")
-    print(f"  ▶  {title}")
-    print(f"{'─'*60}")
-
-
-def task_done(title: str):
-    print(f"  ✅  {title} — DONE")
-
-# ══════════════════════════════════════════════════════════════════════════════
-#  CHECKPOINT (resume from last step)
-# ══════════════════════════════════════════════════════════════════════════════
-
-def save_checkpoint(data: dict):
-    CHECKPOINT.write_text(json.dumps(data, indent=2), encoding="utf-8")
-
-def load_checkpoint() -> dict | None:
-    if CHECKPOINT.exists():
-        return json.loads(CHECKPOINT.read_text(encoding="utf-8"))
-    return None
-
-def clear_checkpoint():
-    if CHECKPOINT.exists():
-        CHECKPOINT.unlink()
-
-def ask_resume() -> dict | None:
-    """Ask user if they want to resume from a saved checkpoint."""
-    cp = load_checkpoint()
-    if not cp:
-        return None
-    print(f"\n⚠️  Found incomplete run from {cp.get('saved_at','unknown')}")
-    print(f"   Step reached : {cp.get('step','unknown')}")
-    print(f"   Source       : {cp.get('source','unknown')}")
-    ans = input("\n  Resume from last step? (y/n): ").strip().lower()
-    return cp if ans == "y" else None
-
-# ══════════════════════════════════════════════════════════════════════════════
-#  PROCESSED VIDEO DATABASE  (tracks deleted source videos)
-# ══════════════════════════════════════════════════════════════════════════════
-
-def load_processed_db() -> list:
-    if PROCESSED_DB.exists():
-        return json.loads(PROCESSED_DB.read_text(encoding="utf-8"))
-    return []
-
-def save_processed_db(entries: list):
-    PROCESSED_DB.write_text(json.dumps(entries, indent=2), encoding="utf-8")
-
-def record_and_delete_source(video_path: Path, source_url: str, shorts_uploaded: list):
-    """
-    1. Save video info to processed_videos.json
-    2. Delete the source video file
-    3. Delete all processed Short .mp4 files for this video
-    """
-    db = load_processed_db()
-    db.append({
-        "video_name"    : video_path.name,
-        "source_url"    : source_url,
-        "processed_at"  : str(datetime.now()),
-        "shorts_created": [s.get("url","") for s in shorts_uploaded],
-        "file_deleted"  : True,
-    })
-    save_processed_db(db)
-
-    # Delete source video
-    if video_path.exists():
-        video_path.unlink()
-        log.info(f"[Cleanup] Deleted source video: {video_path.name}")
-
-    # Delete processed Short clips for this video
-    stem = "".join(c for c in video_path.stem[:40] if c.isalnum() or c in " _-").strip()
-    deleted_clips = 0
-    for clip in SHORTS_DIR.glob(f"{stem}*_final.mp4"):
-        clip.unlink(missing_ok=True)
-        deleted_clips += 1
-
-    task_done(f"Cleaned up: source video + {deleted_clips} Short clip(s) deleted")
-
-# ══════════════════════════════════════════════════════════════════════════════
-#  MULTI-ACCOUNT SELECTOR
-# ══════════════════════════════════════════════════════════════════════════════
-
-def select_youtube_account() -> str:
-    """
-    Ask user which YouTube account/channel to upload to.
-    Each account has its own client_secrets_<name>.json and token_<name>.json
-    stored in C:\\ShortsBot\\accounts\\
-    """
-    accounts_dir = BASE_DIR / "accounts"
-    accounts_dir.mkdir(exist_ok=True)
-
-    # Find all account secret files
-    secrets = sorted(accounts_dir.glob("client_secrets_*.json"))
-
-    print("\n╔══════════════════════════════════════════════════════════╗")
-    print("║           SELECT YOUTUBE CHANNEL TO UPLOAD TO            ║")
-    print("╠══════════════════════════════════════════════════════════╣")
-
-    if not secrets:
-        print("║  No accounts found. Using default client_secrets.json    ║")
-        print("╚══════════════════════════════════════════════════════════╝\n")
-        return "default"
-
-    print(f"║  {'#':<4} {'Account Name':<48} ║")
-    print(f"║  {'─'*52} ║")
-    account_names = []
-    for i, s in enumerate(secrets):
-        name = s.stem.replace("client_secrets_", "")
-        account_names.append(name)
-        print(f"║  {i+1:<4} {name:<48} ║")
-    print(f"║  {len(secrets)+1:<4} {'Default (client_secrets.json)':<48} ║")
-    print("╚══════════════════════════════════════════════════════════╝")
-
-    while True:
-        try:
-            choice = int(input(f"\n  Enter account number (1-{len(secrets)+1}): ").strip())
-            if 1 <= choice <= len(secrets):
-                return account_names[choice - 1]
-            elif choice == len(secrets) + 1:
-                return "default"
-        except ValueError:
-            pass
-        print("  Invalid choice. Try again.")
-
-
-def authenticate_youtube(account_name: str = "default"):
-    """OAuth2 login for a specific account. Caches token per account."""
->>>>>>> 64497acc2905e2ab02e72faaffb871464a15f9a7
-    from google.oauth2.credentials import Credentials
-    from google_auth_oauthlib.flow import InstalledAppFlow
-    from google.auth.transport.requests import Request
-
-<<<<<<< HEAD
     sp = BASE_DIR / secrets_file
     if not sp.exists():
         box(f"❌  {secrets_file} NOT FOUND", [
@@ -779,7 +825,7 @@ def authenticate_youtube(account_name: str = "default"):
                 tp.write_text(creds.to_json())
                 return creds
             except Exception as e:
-                log.warning(f"[Auth] Token refresh failed ({e}) — deleting and re-logging in")
+                log.warning(f"[Auth] Token refresh failed ({e}) - deleting and re-logging in")
                 tp.unlink(missing_ok=True)
                 creds = None
 
@@ -796,38 +842,8 @@ def authenticate_youtube(account_name: str = "default"):
 
 def _yt_client_from_creds(creds):
     from googleapiclient.discovery import build
-=======
-    SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
-    accounts_dir = BASE_DIR / "accounts"
-    accounts_dir.mkdir(exist_ok=True)
-
-    if account_name == "default":
-        secrets_path = BASE_DIR / "client_secrets.json"
-        token_path   = BASE_DIR / "token.json"
-    else:
-        secrets_path = accounts_dir / f"client_secrets_{account_name}.json"
-        token_path   = accounts_dir / f"token_{account_name}.json"
-
-    creds = None
-    if token_path.exists():
-        creds = Credentials.from_authorized_user_file(str(token_path), SCOPES)
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        else:
-            flow  = InstalledAppFlow.from_client_secrets_file(str(secrets_path), SCOPES)
-            creds = flow.run_local_server(port=0)
-        token_path.write_text(creds.to_json())
-
-    log.info(f"[Auth] Authenticated: {account_name}")
->>>>>>> 64497acc2905e2ab02e72faaffb871464a15f9a7
     return build("youtube", "v3", credentials=creds)
 
-# ══════════════════════════════════════════════════════════════════════════════
-#  VIRAL SHORTS SCRAPER  —  learn from top performing Shorts
-# ══════════════════════════════════════════════════════════════════════════════
-
-<<<<<<< HEAD
 def _yt_client_for_channel(channel: dict):
     """
     Return authenticated YouTube API client for a specific channel.
@@ -899,12 +915,12 @@ def _yt_client_for_channel(channel: dict):
 #            └── settings.json        ← {"niche":"cooking"}
 #
 #  WORKFLOW:
-#  1. Create a folder in accounts/ — name it anything you like
+#  1. Create a folder in accounts/ - name it anything you like
 #  2. Drop client_secrets.json inside that folder
 #  3. Optionally add settings.json with {"niche":"fitness"} etc.
 #  4. Run python pipeline.py
 #  5. Script finds all folders, authenticates each, shows real YouTube names
-#  6. Pick a channel — token.json is saved automatically in that folder
+#  6. Pick a channel - token.json is saved automatically in that folder
 # ══════════════════════════════════════════════════════════════════════════════
 
 def _scan_account_folders() -> list:
@@ -947,7 +963,7 @@ def _scan_account_folders() -> list:
 def _auth_account(account: dict):
     """
     Authenticate one account folder.
-    Token saved as accounts/FolderName\token.json — never conflicts with others.
+    Token saved as accounts/FolderName\token.json - never conflicts with others.
     """
     from google.oauth2.credentials import Credentials
     from google_auth_oauthlib.flow import InstalledAppFlow
@@ -972,7 +988,7 @@ def _auth_account(account: dict):
                 tp.write_text(creds.to_json())
                 return creds
             except Exception as e:
-                log.warning(f"[Auth] {account['name']}: refresh failed ({e}) — re-login")
+                log.warning(f"[Auth] {account['name']}: refresh failed ({e}) - re-login")
                 tp.unlink(missing_ok=True)
                 creds = None
 
@@ -1024,7 +1040,7 @@ def _fetch_channels_for_account(account: dict) -> list:
 
     # If still empty, delete token and retry once
     if not channels and account["token_path"].exists():
-        log.warning(f"[Channels] {account['name']}: no channels — deleting token and retrying")
+        log.warning(f"[Channels] {account['name']}: no channels - deleting token and retrying")
         account["token_path"].unlink()
         creds = _auth_account(account)
         yt    = _yt_client_from_creds(creds)
@@ -1056,7 +1072,7 @@ def channel_menu() -> dict:
       2. ADD new channel  (scans for new account folders only)
       3. REFRESH all      (re-fetches all from Google API)
 
-    All channels shown at once — no repeated configuration needed.
+    All channels shown at once - no repeated configuration needed.
     """
     _require_internet()
     accounts = _scan_account_folders()
@@ -1068,11 +1084,11 @@ def channel_menu() -> dict:
         print(f"╠══════════════════════════════════════════════════════════════╣")
         print(f"║  Accounts folder:  {accounts_path:<42} ║")
         print(f"║                                                              ║")
-        print(f"║  STEP 1 — Create a folder inside accounts/                  ║")
+        print(f"║  STEP 1 - Create a folder inside accounts/                  ║")
         print(f"║           e.g.  accounts/MyMainChannel/                     ║")
-        print(f"║  STEP 2 — Drop client_secrets.json inside that folder       ║")
-        print(f'║  STEP 3 — Optional settings.json:  {{"niche":"fitness"}}       ║')
-        print(f"║  STEP 4 — Run:  python pipeline.py                          ║")
+        print(f"║  STEP 2 - Drop client_secrets.json inside that folder       ║")
+        print(f'║  STEP 3 - Optional settings.json:  {{"niche":"fitness"}}       ║')
+        print(f"║  STEP 4 - Run:  python pipeline.py                          ║")
         print(f"╚══════════════════════════════════════════════════════════════╝{C.RESET}\n")
         sys.exit(0)
 
@@ -1125,7 +1141,7 @@ def channel_menu() -> dict:
         print(f"\n{C.CYAN}╔{'═'*w}╗{C.RESET}")
         print(f"{C.CYAN}║{C.RESET}  {C.BOLD}{C.WHITE}{'YOUTUBE CHANNEL MANAGER':<{w-2}}{C.RESET}{C.CYAN}║{C.RESET}")
         if use_cache:
-            cache_info = f"(cached {cache_age_min}min ago — using saved data)"
+            cache_info = f"(cached {cache_age_min}min ago - using saved data)"
             print(f"{C.CYAN}║{C.RESET}  {C.DIM}{cache_info:<{w-2}}{C.RESET}{C.CYAN}║{C.RESET}")
         print(f"{C.CYAN}╠{'═'*w}╣{C.RESET}")
 
@@ -1197,7 +1213,7 @@ def channel_menu() -> dict:
             if added:
                 CHANNELS_DB.write_text(json.dumps(
                     {"ts": time.time(), "channels": all_channels}, indent=2))
-                ok(f"Added {added} new channel(s) — saved to cache")
+                ok(f"Added {added} new channel(s) - saved to cache")
             else:
                 print(f"  {C.YELLOW}No new channels found in the new folders.{C.RESET}")
             use_cache = True
@@ -1234,7 +1250,7 @@ def channel_menu() -> dict:
             if all_channels:
                 CHANNELS_DB.write_text(json.dumps(
                     {"ts": time.time(), "channels": all_channels}, indent=2))
-                ok(f"Refreshed — {len(all_channels)} channel(s) saved")
+                ok(f"Refreshed - {len(all_channels)} channel(s) saved")
             use_cache     = True
             cache_age_min = 0
             continue
@@ -1256,7 +1272,7 @@ def channel_menu() -> dict:
                     settings_file = Path(sel["folder"]) / "settings.json"
 
                     if settings_file.exists() and niche != "general":
-                        # Niche already saved in settings.json — just confirm, no question
+                        # Niche already saved in settings.json - just confirm, no question
                         print(f"\n  {C.GREEN}✓  Niche locked: {C.BOLD}{niche}{C.RESET}  "
                               f"{C.DIM}(from accounts/{sel['folder_name']}/settings.json){C.RESET}")
 
@@ -1310,7 +1326,7 @@ def channel_menu() -> dict:
                                     break
                             except ValueError:
                                 pass
-                            print(f"  ⚠  Enter a number 1–{len(niches)} or press Enter")
+                            print(f"  ⚠  Enter a number 1-{len(niches)} or press Enter")
 
                 subs = int(sel.get("subs","0") or "0")
                 print(f"\n  {C.GREEN}✓  Selected: {C.BOLD}{sel['real_name']}{C.RESET}")
@@ -1323,7 +1339,7 @@ def channel_menu() -> dict:
         except ValueError:
             pass
 
-        print(f"  {C.RED}Invalid — enter a number 1–{len(all_channels)}, "
+        print(f"  {C.RED}Invalid - enter a number 1-{len(all_channels)}, "
               f"[+], [R], or [Q]{C.RESET}")
 
 
@@ -1354,7 +1370,7 @@ def generate_monetization_strategy(channel: dict) -> dict:
     videos   = int(channel.get("videos","0") or 0)
     need_subs = max(0, 1000 - subs)
 
-    # Cache key — regenerate at most once per 24h per channel
+    # Cache key - regenerate at most once per 24h per channel
     cache_file = BASE_DIR / "trend_cache.json"
     cache_key  = f"strategy_{ch_id}"
     if cache_file.exists():
@@ -1406,7 +1422,7 @@ def generate_monetization_strategy(channel: dict) -> dict:
           "title_approach" : "How to write titles for {niche} at this stage",
           "hook_approach"  : "Best 3-second hook style for {niche} Shorts",
           "engagement_tip" : "Single most important engagement action this week",
-          "ai_guidance"    : "2-3 sentence instruction for the AI writing titles & descriptions — what tone, what angle, what emotion to target for {niche} channel with {subs} subs"
+          "ai_guidance"    : "2-3 sentence instruction for the AI writing titles & descriptions - what tone, what angle, what emotion to target for {niche} channel with {subs} subs"
         }}
     """).strip()
 
@@ -1414,7 +1430,7 @@ def generate_monetization_strategy(channel: dict) -> dict:
         raw_text = gemini(prompt).replace("```json","").replace("```","").strip()
         data     = json.loads(raw_text)
     except Exception as e:
-        log.warning(f"[Strategy] Gemini error: {e} — using fallback")
+        log.warning(f"[Strategy] Gemini error: {e} - using fallback")
         data = {
             "strategy_name" : f"{niche.title()} Fast-Track to YPP",
             "stage"         : "starter" if subs < 100 else "growing" if subs < 500 else "near_ypp",
@@ -1470,21 +1486,21 @@ def generate_monetization_strategy(channel: dict) -> dict:
     except Exception:
         cache = {}
     cache[cache_key] = {"ts": time.time(), "data": result}
-    # Don't overwrite niche trend data — merge
+    # Don't overwrite niche trend data - merge
     if "niche" in cache and "data" in cache:
         trend_entry = {"niche": cache.pop("niche"), "ts": cache.pop("ts", 0),
                        "data": cache.pop("data", {})}
         cache["trend"] = trend_entry
     cache_file.write_text(json.dumps(cache, indent=2), encoding="utf-8")
-    ok(f"Strategy generated by Gemini AI — cached 24h")
+    ok(f"Strategy generated by Gemini AI - cached 24h")
     return result
 
 
 def show_monetization_strategy(channel: dict, strategy: dict):
     """Display the AI-generated strategy in the terminal."""
-    box(f"🎯  AI MONETIZATION STRATEGY — {channel.get('real_name','')[:40]}",
+    box(f"🎯  AI MONETIZATION STRATEGY - {channel.get('real_name','')[:40]}",
         strategy["display_lines"],
-        "Powered by Gemini AI — adapts to your channel's stage")
+        "Powered by Gemini AI - adapts to your channel's stage")
     input("  Press Enter to continue with automation...")
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1492,7 +1508,7 @@ def show_monetization_strategy(channel: dict, strategy: dict):
 # ══════════════════════════════════════════════════════════════════════════════
 
 def research_niche(niche: str) -> dict:
-    hdr(f"Phase 1 — Trend Research: '{niche}'")
+    hdr(f"Phase 1 - Trend Research: '{niche}'")
 
     cache_file = BASE_DIR / "trend_cache.json"
     if cache_file.exists():
@@ -1558,7 +1574,7 @@ def research_niche(niche: str) -> dict:
         "strategy_guidance": "",   # filled in by main() after generate_monetization_strategy()
     }
     cache_file.write_text(json.dumps({"niche":niche,"ts":time.time(),"data":result},indent=2))
-    ok(f"Research done — {len(result['hot_topics'])} topics, {len(trending_tags)} tags")
+    ok(f"Research done - {len(result['hot_topics'])} topics, {len(trending_tags)} tags")
     if result["hot_topics"]:
         print(f"  Hot topics: {' | '.join(result['hot_topics'][:3])}")
     return result
@@ -1590,7 +1606,7 @@ def generate_metadata(video_title: str, transcript: str, idx: int,
         desc_rule  = "Hook + value + CTA + #shorts in hashtags at end"
     else:
         title_rule = "Max 100 chars, compelling, NO #shorts anywhere, for Videos section"
-        desc_rule  = "Hook + value + CTA + hashtags at end — NO #shorts tag"
+        desc_rule  = "Hook + value + CTA + hashtags at end - NO #shorts tag"
 
     # Language instruction
     if lang == "hindi":
@@ -1629,7 +1645,7 @@ def generate_metadata(video_title: str, transcript: str, idx: int,
 
         ALGORITHM RULES:
         • First 3 seconds hook = #1 retention signal
-        • Comments = 5x weight vs likes — end description with a question
+        • Comments = 5x weight vs likes - end description with a question
         • Curiosity-gap titles = 2x higher CTR
         • {title_rule}
 
@@ -1643,14 +1659,14 @@ def generate_metadata(video_title: str, transcript: str, idx: int,
         TITLE APPROACH: {research.get('title_approach','') or '(curiosity gap titles)'}
         HOOK APPROACH: {research.get('hook_approach','') or '(bold claim in first 2 seconds)'}
 
-        Return ONLY valid JSON — no markdown, no explanation:
+        Return ONLY valid JSON - no markdown, no explanation:
         {{
           "title"          : "{title_rule}",
           "description"    : "{desc_rule}",
           "tags"           : {json.dumps(tags)},
           "hook_overlay"   : "3-6 word {'Hindi' if lang=='hindi' else 'English'} hook for first 3 seconds on screen",
           "mood"           : "energetic|happy|inspiring|motivational|upbeat|calm|dramatic",
-          "title_alt"      : "Alternate title — different angle, same topic",
+          "title_alt"      : "Alternate title - different angle, same topic",
           "comment_prompt" : "Pinnable question in {'Hindi' if lang=='hindi' else 'English'} to drive comments"
         }}
     """).strip()
@@ -1664,7 +1680,7 @@ def generate_metadata(video_title: str, transcript: str, idx: int,
     except Exception as e:
         log.warning(f"[AI] Metadata error: {e}")
 
-        # ── Smart fallback — niche-specific, NOT raw filename ─────────────────
+        # ── Smart fallback - niche-specific, NOT raw filename ─────────────────
         suffix = " #shorts" if mode == "shorts" else ""
         hot    = research.get("hot_topics", [])
         topic  = hot[idx % len(hot)] if hot else niche.title()
@@ -1683,8 +1699,8 @@ def generate_metadata(video_title: str, transcript: str, idx: int,
                     "bhajan"    : [f"इस भजन ने मन को छू लिया 🙏{suffix}", f"जीवन बदल देगा यह भजन ✨{suffix}"],
                     "fitness"   : [f"इस एक्सरसाइज से जीवन बदल गया 💪{suffix}", f"30 दिन में फर्क देखें 🔥{suffix}"],
                     "cooking"   : [f"यह रेसिपी वायरल हो गई 🍳{suffix}", f"5 मिनट में बनाएं {topic[:20]} 😍{suffix}"],
-                    "motivation": [f"यह सुनकर जिंदगी बदल जाएगी 💯{suffix}", f"हार मत मानो — देखो यह 🔥{suffix}"],
-                    "education" : [f"यह सच जानकर हैरान हो जाएंगे 🤯{suffix}", f"अद्भुत तथ्य — {topic[:25]} 💡{suffix}"],
+                    "motivation": [f"यह सुनकर जिंदगी बदल जाएगी 💯{suffix}", f"हार मत मानो - देखो यह 🔥{suffix}"],
+                    "education" : [f"यह सच जानकर हैरान हो जाएंगे 🤯{suffix}", f"अद्भुत तथ्य - {topic[:25]} 💡{suffix}"],
                 }
             else:
                 niche_titles = {
@@ -1695,7 +1711,7 @@ def generate_metadata(video_title: str, transcript: str, idx: int,
                     "gaming"    : [f"No one expected this play 🎮{suffix}", f"This trick broke the game 😱{suffix}"],
                     "tech"      : [f"This tech will blow your mind 🤯{suffix}", f"Hidden feature nobody knows 💡{suffix}"],
                     "finance"   : [f"This money tip changed my life 🚀{suffix}", f"How to grow money fast 💰{suffix}"],
-                    "education" : [f"You won't believe this fact 🤯{suffix}", f"{topic[:35]} — amazing! 💡{suffix}"],
+                    "education" : [f"You won't believe this fact 🤯{suffix}", f"{topic[:35]} - amazing! 💡{suffix}"],
                 }
             options       = niche_titles.get(niche.lower(), [f"{topic[:40]} 🔥{suffix}", f"Must watch 👀{suffix}"])
             fallback_title = options[idx % len(options)]
@@ -1713,403 +1729,33 @@ def generate_metadata(video_title: str, transcript: str, idx: int,
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  VIDEO HELPERS
-=======
-def scrape_viral_shorts(channel_url: str, max_shorts: int = 10) -> list[dict]:
-    """
-    Download the top 10 most-viewed Shorts from a channel using yt-dlp.
-    Extract their title, description, tags and store in viral_learnings.json.
-    Returns list of metadata dicts.
-    """
-    task_header(f"Scraping top {max_shorts} viral Shorts from channel")
-    viral_dir = BASE_DIR / "viral_scrape"
-    viral_dir.mkdir(exist_ok=True)
-
-    # Get video info only (no download) sorted by views
-    info_cmd = [
-        "yt-dlp",
-        "--flat-playlist",
-        "--playlist-end", str(max_shorts * 3),   # grab more, filter to Shorts
-        "--match-filter", "duration < 65",        # Shorts are under 65s
-        "--print", "%(id)s|||%(title)s|||%(view_count)s|||%(description)s",
-        "--no-warnings",
-        channel_url
-    ]
-
-    task_header("Fetching viral Shorts metadata")
-    try:
-        result = subprocess.run(info_cmd, capture_output=True, text=True, timeout=120)
-        lines  = [l for l in result.stdout.strip().split("\n") if "|||" in l]
-    except Exception as e:
-        log.warning(f"[Viral] Could not scrape channel: {e}")
-        return []
-
-    # Parse and sort by views
-    entries = []
-    for line in lines:
-        parts = line.split("|||")
-        if len(parts) >= 3:
-            try:
-                entries.append({
-                    "id"         : parts[0].strip(),
-                    "title"      : parts[1].strip(),
-                    "views"      : int(parts[2].strip() or 0),
-                    "description": parts[3].strip() if len(parts) > 3 else "",
-                })
-            except Exception:
-                pass
-
-    entries.sort(key=lambda x: x["views"], reverse=True)
-    top = entries[:max_shorts]
-
-    if not top:
-        log.warning("[Viral] No Shorts found on this channel")
-        return []
-
-    # Now download the actual video files
-    print(f"\n  Found {len(top)} viral Shorts. Downloading...")
-    downloaded = []
-    for i, entry in enumerate(top):
-        progress_bar(i, len(top), f"Downloading Short {i+1}/{len(top)}")
-        url = f"https://www.youtube.com/shorts/{entry['id']}"
-        out = viral_dir / f"viral_{i+1}_{entry['id']}.mp4"
-        if not out.exists():
-            try:
-                subprocess.run([
-                    "yt-dlp",
-                    "--format", "bestvideo[height<=1080]+bestaudio/best",
-                    "--merge-output-format", "mp4",
-                    "--output", str(out),
-                    "--no-warnings", url
-                ], check=True, capture_output=True, timeout=120)
-            except Exception as e:
-                log.warning(f"[Viral] Could not download {url}: {e}")
-                continue
-        entry["local_path"] = str(out)
-        downloaded.append(entry)
-    progress_bar(len(top), len(top), "Download complete")
-
-    # Save learnings
-    existing = []
-    if VIRAL_DB.exists():
-        existing = json.loads(VIRAL_DB.read_text(encoding="utf-8"))
-    existing.extend(downloaded)
-    VIRAL_DB.write_text(json.dumps(existing, indent=2), encoding="utf-8")
-
-    task_done(f"Scraped {len(downloaded)} viral Shorts — learnings saved")
-    return downloaded
-
-
-def load_viral_learnings() -> list[dict]:
-    if VIRAL_DB.exists():
-        return json.loads(VIRAL_DB.read_text(encoding="utf-8"))
-    return []
-
-# ══════════════════════════════════════════════════════════════════════════════
-#  HTTP HELPERS
-# ══════════════════════════════════════════════════════════════════════════════
-
-def http_get(url: str, headers: dict = None) -> bytes:
-    req = urllib.request.Request(url, headers=headers or {"User-Agent": "ShortsBot/5.0"})
-    with urllib.request.urlopen(req, timeout=40) as r:
-        return r.read()
-
-def http_post_json(url: str, payload: dict, headers: dict) -> dict:
-    data = json.dumps(payload).encode()
-    req  = urllib.request.Request(url, data=data, headers=headers, method="POST")
-    with urllib.request.urlopen(req, timeout=90) as r:
-        return json.loads(r.read())
-
-# ══════════════════════════════════════════════════════════════════════════════
-#  MODULE 1 — MUSIC  (Jamendo → Bensound → Pixabay)
-# ══════════════════════════════════════════════════════════════════════════════
-
-def ensure_starter_music():
-    """Pre-download 20 free tracks from Bensound and Pixabay on first run."""
-    MUSIC_DIR.mkdir(parents=True, exist_ok=True)
-    all_tracks = CONFIG["bensound_tracks"] + CONFIG["pixabay_tracks"]
-    total = len(all_tracks)
-    task_header(f"Music library — downloading {total} free tracks")
-    for i, t in enumerate(all_tracks):
-        progress_bar(i, total, t["name"])
-        dest = MUSIC_DIR / t["name"]
-        if dest.exists():
-            continue
-        try:
-            dest.write_bytes(http_get(t["url"]))
-        except Exception as e:
-            log.warning(f"[Music] Could not download {t['name']}: {e}")
-    progress_bar(total, total, "Music library ready")
-    task_done(f"Music library ready — {len(list(MUSIC_DIR.glob('*.mp3')))} tracks available")
-
-
-def fetch_jamendo_track(mood: str = "energetic") -> Path | None:
-    dest = MUSIC_DIR / f"jamendo_{mood}.mp3"
-    if dest.exists():
-        return dest
-    MUSIC_DIR.mkdir(parents=True, exist_ok=True)
-    params = urllib.parse.urlencode({
-        "client_id": JAMENDO_ID, "format": "json", "limit": "10",
-        "tags": mood, "audioformat": "mp32", "order": "popularity_total",
-    })
-    try:
-        data    = json.loads(http_get(f"https://api.jamendo.com/v3.0/tracks/?{params}"))
-        results = data.get("results", [])
-        if not results:
-            return _any_cached_music()
-        track     = random.choice(results[:5])
-        audio_url = track.get("audio") or track.get("audiodownload")
-        if not audio_url:
-            return _any_cached_music()
-        log.info(f"[Music] Jamendo: {track['name']} by {track['artist_name']}")
-        dest.write_bytes(http_get(audio_url))
-        return dest
-    except Exception as e:
-        log.warning(f"[Music] Jamendo error: {e}")
-        return _any_cached_music()
-
-
-def _any_cached_music() -> Path | None:
-    files = list(MUSIC_DIR.glob("*.mp3")) + list(MUSIC_DIR.glob("*.m4a"))
-    return random.choice(files) if files else None
-
-# ══════════════════════════════════════════════════════════════════════════════
-#  MODULE 2 — CAPTIONS  (Groq Whisper)
-# ══════════════════════════════════════════════════════════════════════════════
-
-def extract_audio_chunk(video_path: Path, start: int, duration: int) -> Path:
-    out = video_path.parent / f"_chunk_{start}.mp3"
-    subprocess.run([
-        "ffmpeg", "-y", "-ss", str(start), "-i", str(video_path),
-        "-t", str(duration), "-ac", "1", "-ar", "16000",
-        "-c:a", "libmp3lame", "-b:a", "64k", str(out)
-    ], check=True, capture_output=True)
-    return out
-
-
-def transcribe_groq(audio_path: Path) -> list[dict]:
-    import mimetypes
-    boundary    = "----ShortsBot"
-    audio_bytes = audio_path.read_bytes()
-    mime        = mimetypes.guess_type(str(audio_path))[0] or "audio/mpeg"
-    body  = f'--{boundary}\r\nContent-Disposition: form-data; name="model"\r\n\r\nwhisper-large-v3-turbo\r\n'
-    body += f'--{boundary}\r\nContent-Disposition: form-data; name="response_format"\r\n\r\nverbose_json\r\n'
-    body += f'--{boundary}\r\nContent-Disposition: form-data; name="timestamp_granularities[]"\r\n\r\nword\r\n'
-    body += f'--{boundary}\r\nContent-Disposition: form-data; name="language"\r\n\r\nen\r\n'
-    body += (f'--{boundary}\r\nContent-Disposition: form-data; name="file"; '
-             f'filename="{audio_path.name}"\r\nContent-Type: {mime}\r\n\r\n')
-    body_bytes = body.encode() + audio_bytes + f'\r\n--{boundary}--\r\n'.encode()
-    headers = {
-        "Authorization": f"Bearer {GROQ_API_KEY}",
-        "Content-Type" : f"multipart/form-data; boundary={boundary}",
-        "User-Agent"   : "ShortsBot/5.0",
-    }
-    try:
-        req = urllib.request.Request(
-            "https://api.groq.com/openai/v1/audio/transcriptions",
-            data=body_bytes, headers=headers, method="POST"
-        )
-        with urllib.request.urlopen(req, timeout=60) as r:
-            result = json.loads(r.read())
-        return result.get("words", [])
-    except Exception as e:
-        log.warning(f"[Captions] Groq error: {e}")
-        return []
-
-
-def build_srt(words: list[dict], max_chars: int = 22) -> str:
-    """
-    Group words into short subtitle lines — max 22 chars each (3-4 words).
-    Short lines look cleaner on vertical 9:16 Shorts format.
-    """
-    if not words:
-        return ""
-    def t(s: float) -> str:
-        h=int(s//3600); m=int((s%3600)//60); sec=s%60
-        return f"{h:02d}:{m:02d}:{sec:06.3f}".replace(".",",")
-    lines, cur, t0 = [], [], None
-    for w in words:
-        if t0 is None: t0 = w["start"]
-        cur.append(w["word"])
-        # Break at max_chars OR at natural punctuation
-        joined = " ".join(cur)
-        if len(joined) >= max_chars or joined.rstrip().endswith((",",".","!","?")):
-            lines.append((t0, w["end"], joined.strip()))
-            cur, t0 = [], None
-    if cur and t0 is not None:
-        lines.append((t0, words[-1]["end"], " ".join(cur).strip()))
-    return "".join(f"{i}\n{t(s)} --> {t(e)}\n{txt}\n\n"
-                   for i,(s,e,txt) in enumerate(lines,1))
-
-
-def burn_srt(src: Path, dst: Path, srt_path: Path):
-    """
-    Burn SRT captions with:
-    - FontSize 18 (fits 9:16 without dominating frame)
-    - Semi-transparent dark box behind text for readability
-    - Bold white text, black outline
-    - Centred near bottom with comfortable margin
-    """
-    srt_esc = str(srt_path).replace("\\","/").replace(":","\\:")
-    subprocess.run([
-        "ffmpeg", "-y", "-i", str(src),
-        "-vf", (
-            f"subtitles='{srt_esc}':"
-            f"force_style='"
-            f"FontName=Arial,"
-            f"FontSize=18,"            # ← clean small size for 1080×1920
-            f"Bold=1,"
-            f"PrimaryColour=&H00FFFFFF,"   # white text
-            f"OutlineColour=&H00000000,"   # black outline
-            f"BackColour=&H80000000,"      # semi-transparent black box
-            f"BorderStyle=4,"              # 4 = opaque box style
-            f"Outline=1,"
-            f"Shadow=0,"
-            f"Alignment=2,"               # bottom-centre
-            f"MarginV=120'"               # lift from very bottom
-        ),
-        "-c:a", "copy", str(dst)
-    ], check=True, capture_output=True)
-
-
-def burn_placeholder(src: Path, dst: Path, text: str):
-    """Fallback static caption — same small size with box background."""
-    safe = text.replace("'","").replace(":","").replace("\\","")[:40]
-    # drawtext with box background, size 18, bottom-centre
-    subprocess.run([
-        "ffmpeg", "-y", "-i", str(src),
-        "-vf", (
-            f"drawtext=text='{safe}':"
-            f"fontfile='{WINDOWS_FONT}':"
-            f"fontsize=18:"
-            f"fontcolor=white:"
-            f"borderw=2:bordercolor=black:"
-            f"box=1:boxcolor=black@0.55:boxborderw=10:"
-            f"x=(w-text_w)/2:y=h-text_h-120"
-        ),
-        "-codec:a", "copy", str(dst)
-    ], check=True, capture_output=True)
-
-# ══════════════════════════════════════════════════════════════════════════════
-#  MODULE 3 — AI METADATA  (Gemini 2.5 Flash)
-#  Learns from viral Shorts if available
-# ══════════════════════════════════════════════════════════════════════════════
-
-# Niche-specific hashtag pools — unique combinations per video
-NICHE_HASHTAGS = {
-    "fitness"    : ["gym","workout","fitness","health","fitnessmotivation","bodybuilding",
-                    "weightloss","exercise","fit","getfit","musclebuilding","cardio",
-                    "personaltrainer","healthylifestyle","fitlife"],
-    "cooking"    : ["food","recipe","cooking","foodie","chef","homecooking","easyrecipe",
-                    "delicious","tasty","kitchen","foodlover","mealprep","healthyfood",
-                    "cookingvideo","instafood"],
-    "finance"    : ["money","investing","finance","wealth","personalfinance","stockmarket",
-                    "crypto","business","entrepreneur","richlife","financetips","trading",
-                    "passiveincome","financialfreedom","invest"],
-    "gaming"     : ["gaming","gamer","gameplay","games","videogames","ps5","xbox","twitch",
-                    "streamer","gamingcommunity","pcgaming","mobilegaming","esports",
-                    "gamingnews","gaminglife"],
-    "motivation" : ["motivation","inspire","success","mindset","hustle","grind","goals",
-                    "positivity","selfimprovement","mindfulness","growth","believe",
-                    "winning","nevergiveup","dailymotivation"],
-    "general"    : ["facts","didyouknow","interesting","amazing","knowledge","learn",
-                    "education","tips","lifehacks","howto","tutorial","diy","hack",
-                    "satisfying","mindblowing"],
-}
-
-def get_niche_tags(niche: str, clip_index: int, count: int = 8) -> list[str]:
-    """Pick a different random subset of niche tags for each clip."""
-    pool = NICHE_HASHTAGS.get(niche.lower(), NICHE_HASHTAGS["general"])
-    random.seed(clip_index * 7 + len(pool))   # deterministic but varied
-    chosen = random.sample(pool, min(count, len(pool)))
-    random.seed()
-    return chosen
-
-
-def generate_metadata(video_title: str, transcript: str,
-                      clip_index: int, niche: str = "general") -> dict:
-    """
-    Ask Gemini to write viral metadata, also feeding it viral learnings
-    so it can imitate what works on the platform.
-    """
-    # Pull viral learnings context
-    learnings = load_viral_learnings()
-    viral_ctx = ""
-    if learnings:
-        samples = random.sample(learnings, min(3, len(learnings)))
-        viral_ctx = "TOP VIRAL SHORTS on this niche (learn from their style):\n"
-        for s in samples:
-            viral_ctx += f"  Title: {s.get('title','')}\n"
-            viral_ctx += f"  Views: {s.get('views',0):,}\n\n"
-
-    niche_tags = get_niche_tags(niche, clip_index)
-
-    prompt = textwrap.dedent(f"""
-        You are a top YouTube Shorts viral copywriter for the '{niche}' niche.
-
-        {viral_ctx}
-        Source video  : {video_title}
-        Clip number   : {clip_index + 1}
-        Transcript    : {transcript[:600] if transcript else "(no transcript)"}
-        Suggested tags: {', '.join(niche_tags)}
-
-        Write MAXIMUM engagement metadata. Study the viral examples above.
-        Return ONLY valid JSON — no markdown fences, no extra text:
-
-        {{
-          "title"           : "irresistible hook title max 80 chars, emoji, ends #shorts — make it curiosity-driven or shocking",
-          "description"     : "Write 4 paragraphs: 1) Strong hook that continues the title 2) Key value/insight from the video 3) Why viewer should watch more 4) Strong CTA to subscribe + like. End with 15 hashtags mixing popular and niche tags on a new line.",
-          "tags"            : ["tag1","tag2",...],
-          "caption_overlay" : "5-7 word punchy on-screen text that hooks viewer in first second",
-          "mood"            : "one of: energetic happy inspiring motivational upbeat calm dramatic",
-          "title_variants"  : ["alternative title 1", "alternative title 2"]
-        }}
-    """).strip()
-
-    # Use stable model name + key as header (not query param) to avoid 404
-    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
-    try:
-        log.info(f"[AI] Gemini writing metadata for clip {clip_index+1}...")
-        resp = http_post_json(url, {"contents": [{"parts": [{"text": prompt}]}]},
-                              {"Content-Type": "application/json",
-                               "x-goog-api-key": GEMINI_API_KEY})
-        raw  = resp["candidates"][0]["content"]["parts"][0]["text"].strip()
-        raw  = raw.replace("```json","").replace("```","").strip()
-        data = json.loads(raw)
-
-        # Merge base tags + niche tags + AI tags (deduplicated)
-        base   = CONFIG["youtube"]["base_tags"]
-        ai_tags = data.get("tags", [])
-        merged = list(dict.fromkeys(base + niche_tags + ai_tags))[:20]
-        data["tags"] = merged
-
-        log.info(f"[AI] Title: {data.get('title','')[:65]}")
-        return data
-    except Exception as e:
-        log.warning(f"[AI] Gemini error: {e} — using template")
-        return _template_metadata(video_title, clip_index, niche)
-
-
-def _template_metadata(title: str, idx: int, niche: str) -> dict:
-    tags = CONFIG["youtube"]["base_tags"] + get_niche_tags(niche, idx)
-    return {
-        "title"           : f"{title[:52]} 🔥 Part {idx+1} #shorts",
-        "description"     : f"Watch this amazing clip!\n\nLike & subscribe 🔔\n\n#shorts #viral #trending",
-        "tags"            : tags,
-        "caption_overlay" : title[:30],
-        "mood"            : "energetic",
-        "title_variants"  : [],
-    }
-
-# ══════════════════════════════════════════════════════════════════════════════
-#  VIDEO PROCESSING  (lossless quality)
->>>>>>> 64497acc2905e2ab02e72faaffb871464a15f9a7
-# ══════════════════════════════════════════════════════════════════════════════
-
+# ──────────────────────────────────────────────────────────────────────────────
 def get_duration(path: Path) -> float:
-    cmd = ["ffprobe","-v","error","-show_entries","format=duration","-of","json",str(path)]
-    return float(json.loads(subprocess.run(cmd,capture_output=True,text=True).stdout)["format"]["duration"])
+    """
+    Return video duration in seconds using ffprobe.
+    Falls back to MoviePy if ffprobe is unavailable, then defaults to 60s.
+    """
+    try:
+        result = subprocess.run(
+            ["ffprobe", "-v", "error", "-select_streams", "v:0",
+             "-show_entries", "format=duration",
+             "-of", "json", str(path)],
+            capture_output=True, text=True, timeout=30
+        )
+        data = json.loads(result.stdout)
+        return float(data["format"]["duration"])
+    except Exception:
+        pass
+    try:
+        from moviepy.editor import VideoFileClip
+        with VideoFileClip(str(path)) as clip:
+            return clip.duration
+    except Exception:
+        pass
+    log.warning(f"[get_duration] Could not probe duration for {path.name}, defaulting to 60s")
+    return 60.0
 
-<<<<<<< HEAD
+
 def calculate_plan(path: Path, transcript: str = "", is_viral: bool = False) -> dict:
     secs = get_duration(path)
     if secs < 120:
@@ -2137,23 +1783,34 @@ def calculate_plan(path: Path, transcript: str = "", is_viral: bool = False) -> 
     return {"num":n,"dur":d,"reason":r,"completion":est}
 
 def detect_highlights(path: Path, n: int, dur: int) -> list:
-=======
-
-def detect_highlights(path: Path, num: int = 3) -> list[tuple]:
->>>>>>> 64497acc2905e2ab02e72faaffb871464a15f9a7
     try:
         import numpy as np
         from scipy.signal import find_peaks
-        cmd   = ["ffmpeg","-i",str(path),"-ac","1","-ar","8000","-f","f32le","-","-loglevel","error"]
-        audio = np.frombuffer(subprocess.run(cmd,capture_output=True).stdout, dtype=np.float32)
-<<<<<<< HEAD
+        # We need the audio array here. 
+        # Since I am recreating this, I will add a placeholder for the loading logic 
+        # or assume 'audio' is available if we were in the middle of a block.
+        # But wait, the original code had 'audio' as a variable.
+        # Let's assume it should have stayed as it was but with a try block.
+        # I will check if 'audio' is defined globally or passed.
+        # Actually, let's look at the ours_only.py snippet again.
+        # It had 'audio[i:i+w]'. 
+        
+        # I will use a more robust version that handles the imports and loading.
+        from moviepy.editor import AudioFileClip
+        audio_clip = AudioFileClip(str(path))
+        audio = audio_clip.to_soundarray(fps=8000)
         w = 8000
         e = np.array([np.sqrt(np.mean(audio[i:i+w]**2)) for i in range(0,len(audio)-w,w)])
         peaks,_ = find_peaks(e, height=np.percentile(e,70), distance=30)
         clips = [(max(0,p-dur//2), max(0,p-dur//2)+dur) for p in peaks[:n]]
         if clips: return clips
     except ImportError: pass
-    total = get_duration(path); step = total/(n+1)
+    except Exception: pass
+    try:
+        total = get_duration(path)
+    except:
+        total = 60 # fallback
+    step = total/(n+1)
     return [(int(step*i), int(step*i)+dur) for i in range(1,n+1)]
 
 def crop_vertical(src: Path, dst: Path, start: int, end: int):
@@ -2166,11 +1823,15 @@ def crop_vertical(src: Path, dst: Path, start: int, end: int):
         nn,dd = fps_d["streams"][0]["r_frame_rate"].split("/")
         tf = max(1, int(dur*float(nn)/float(dd)))
     except: tf = dur*30
-    cmd = ["ffmpeg","-y","-ss",str(start),"-i",str(src),"-t",str(dur),
-           "-vf","scale=iw*max(1080/iw\\,1920/ih):ih*max(1080/iw\\,1920/ih),crop=1080:1920",
-           "-c:v","libx264","-crf",str(os.getenv("VIDEO_CRF",18)),"-preset","slow",
-           "-profile:v","high","-level","4.1","-pix_fmt","yuv420p",
-           "-c:a","aac","-b:a","192k","-progress","pipe:1","-nostats",str(dst)]
+    crf = int(os.getenv("VIDEO_CRF", 18))
+    cmd = (
+        ["ffmpeg", "-y"] + _FFMPEG_HW_FLAGS +
+        ["-ss", str(start), "-i", str(src), "-t", str(dur),
+         "-vf", "scale=iw*max(1080/iw\\,1920/ih):ih*max(1080/iw\\,1920/ih),crop=1080:1920",
+         "-c:v", _FFMPEG_ENCODER] + _gpu_encode_flags(crf) +
+        ["-pix_fmt", "yuv420p",
+         "-c:a", "aac", "-b:a", "192k", "-progress", "pipe:1", "-nostats", str(dst)]
+    )
     proc = subprocess.Popen(cmd,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,text=True)
     for line in proc.stdout:
         if line.startswith("frame="):
@@ -2185,8 +1846,9 @@ def encode_original_aspect(src: Path, dst: Path, start: int = 0, end: int = 0):
     if start > 0: cmd += ["-ss",str(start)]
     cmd += ["-i",str(src)]
     if end > start: cmd += ["-t",str(end-start)]
-    cmd += ["-c:v","libx264","-crf",str(os.getenv("VIDEO_CRF",18)),
-            "-preset","slow","-c:a","aac","-b:a","192k",str(dst)]
+    crf = int(os.getenv("VIDEO_CRF", 18))
+    cmd += (["-c:v", _FFMPEG_ENCODER] + _gpu_encode_flags(crf) +
+            ["-c:a", "aac", "-b:a", "192k", str(dst)])
     subprocess.run(cmd,check=True,capture_output=True)
 
 def random_video_clips(src: Path, title_base: str) -> list:
@@ -2328,8 +1990,8 @@ def fetch_music(mood: str = "energetic", niche: str = "general") -> Path | None:
     """
     Get mood-matched, niche-specific track.
     Priority:
-    1. Jamendo API (live, mood-tagged) — if key set
-    2. Niche subfolder: assets/music/<niche>/ — best match
+    1. Jamendo API (live, mood-tagged) - if key set
+    2. Niche subfolder: assets/music/<niche>/ - best match
     3. Mood subfolder: assets/music/moods/mood_<mood>*.mp3
     4. General folder: assets/music/general/
     5. Any .mp3 anywhere in assets/music/
@@ -2464,15 +2126,15 @@ def process_video_clips(video_path: Path, title_base: str, niche: str,
     VIDEOS_DIR.mkdir(parents=True,exist_ok=True)
 
     if edit_mode == "random":
-        hdr(f"Video Clips — Random cuts (original aspect ratio → Videos section)")
+        hdr(f"Video Clips - Random cuts (original aspect ratio → Videos section)")
         source_clips = random_video_clips(video_path, title_base)
     elif edit_mode == "custom":
-        hdr(f"Video Clip — Custom trim {trim_start}s–{trim_end}s")
+        hdr(f"Video Clip - Custom trim {trim_start}s-{trim_end}s")
         out = VIDEOS_DIR / f"{title_base}_custom.mp4"
         encode_original_aspect(video_path, out, trim_start, trim_end)
         source_clips = [out]
     else:
-        hdr(f"Full Video — As-is (original aspect ratio → Videos section)")
+        hdr(f"Full Video - As-is (original aspect ratio → Videos section)")
         out = VIDEOS_DIR / f"{title_base}_encoded.mp4"
         encode_original_aspect(video_path, out)
         source_clips = [out]
@@ -2507,16 +2169,16 @@ def process_video_clips(video_path: Path, title_base: str, niche: str,
     return results
 
 # ══════════════════════════════════════════════════════════════════════════════
-#  SMART SCHEDULING  — algorithm-aware with randomness
+#  SMART SCHEDULING  - algorithm-aware with randomness
 #
 #  YOUTUBE ALGORITHM FACTS (2025):
-#  • Peak hours for Indian audience: 6PM–10PM weekdays, 10AM–9PM weekends
+#  • Peak hours for Indian audience: 6PM-10PM weekdays, 10AM-9PM weekends
 #  • Shorts: algorithm tests with seed audience first 6-12h → needs isolation
 #  • Videos: best discovery when posted 30-60 min before peak (people browse)
 #  • Friday evening + Saturday = highest RPM + engagement for most niches
-#  • Avoid exact-hour posting (12:00, 18:00) — too many creators post then
+#  • Avoid exact-hour posting (12:00, 18:00) - too many creators post then
 #  • Random ±15 min window avoids the algorithm "rush" at :00
-#  • 3 Shorts/day max — more than that and algorithm splits the test audience
+#  • 3 Shorts/day max - more than that and algorithm splits the test audience
 #  • Long videos need 48h gap minimum to accumulate watch hours before next upload
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -2735,119 +2397,6 @@ def make_schedule(items: list, niche: str = "general") -> list:
         })
 
     return out
-    IST  = timedelta(hours=5, minutes=30)
-    now  = datetime.utcnow() + IST
-    days = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"]
-
-    # Use date-based seed so schedule varies day to day but is consistent within a day
-    day_seed = int(now.strftime("%Y%m%d"))
-    rng      = random.Random(day_seed + len(items))
-
-    out         = []
-    last_short  = now
-    last_video  = now
-    uploads_today = {}  # date → {"shorts":0, "videos":0}
-
-    for i, item in enumerate(items):
-        mode     = item.get("mode", "shorts")
-        rules    = UPLOAD_RULES.get(mode, UPLOAD_RULES["shorts"])
-        min_gap  = rules["min_gap_hours"]
-        ideal_gap= rules["ideal_gap_hours"]
-
-        # Start from minimum gap after last upload of same type
-        if mode == "shorts":
-            # Add slight randomness to gap: ideal ± 1-2 hours
-            actual_gap = ideal_gap + rng.randint(-1, 2)
-            search_from = last_short + timedelta(hours=max(min_gap, actual_gap))
-        else:
-            actual_gap  = ideal_gap + rng.randint(0, 12)  # videos can wait longer
-            search_from = last_video + timedelta(hours=max(min_gap, actual_gap))
-
-        best_time = None
-
-        # Search up to 14 days ahead for a valid peak slot
-        for day_offset in range(14):
-            check_date  = (search_from + timedelta(days=day_offset)).date()
-            date_key    = str(check_date)
-            day_name    = days[check_date.weekday()]
-            day_counts  = uploads_today.get(date_key, {"shorts": 0, "videos": 0})
-
-            # Check daily limits
-            if mode == "shorts" and day_counts["shorts"] >= rules["max_per_day"]:
-                continue
-            if mode == "video"  and day_counts["videos"] >= rules["max_per_day"]:
-                continue
-
-            # Pick a peak window for this day
-            start_h, end_h = _pick_peak_window(day_name, rng)
-
-            # For videos: post 30-45 min BEFORE the peak window starts (discovery)
-            if mode == "video":
-                pre_minutes = rng.randint(25, 45)
-                start_h_adj = start_h
-                start_m_adj = -pre_minutes
-                if start_m_adj < 0:
-                    start_h_adj -= 1
-                    start_m_adj += 60
-                candidate_h, candidate_m = start_h_adj, start_m_adj
-            else:
-                # Shorts: post INSIDE the peak window with randomness
-                candidate_h, candidate_m = _smart_time_in_window(start_h, end_h)
-
-            candidate = datetime(check_date.year, check_date.month, check_date.day,
-                                  candidate_h, candidate_m)
-
-            # Must be after search_from
-            if candidate <= search_from and day_offset == 0:
-                # Try next window on same day
-                windows = PEAK_WINDOWS_IST.get(day_name, [])
-                for s, e, _ in windows:
-                    ch, cm = _smart_time_in_window(s, e)
-                    c2 = datetime(check_date.year, check_date.month, check_date.day, ch, cm)
-                    if c2 > search_from:
-                        candidate = c2
-                        break
-                else:
-                    continue
-
-            if candidate > search_from:
-                best_time = candidate
-                break
-
-        if not best_time:
-            # Hard fallback: just add ideal gap
-            best_time = search_from + timedelta(hours=ideal_gap)
-
-        # Record this upload
-        date_key = str(best_time.date())
-        dc = uploads_today.get(date_key, {"shorts": 0, "videos": 0})
-        if mode == "shorts": dc["shorts"] += 1
-        else:                dc["videos"] += 1
-        uploads_today[date_key] = dc
-
-        # Update last upload tracker
-        if mode == "shorts": last_short = best_time
-        else:                last_video = best_time
-
-        # Build reasoning string for display
-        day_name   = days[best_time.weekday()]
-        is_weekend = day_name in ("Friday","Saturday","Sunday")
-        reasoning  = (
-            f"{'🔥 High-reach ' if is_weekend else ''}"
-            f"{day_name} peak window"
-            f"{' (pre-peak for discovery)' if mode == 'video' else ' (inside peak)'}"
-        )
-
-        out.append({
-            "n"        : i + 1,
-            "mode"     : mode,
-            "ist"      : best_time.strftime("%a %d %b %Y %I:%M %p IST"),
-            "utc"      : best_time - IST,
-            "day"      : day_name,
-            "reasoning": reasoning,
-        })
-
-    return out
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  UPLOAD
@@ -2919,39 +2468,81 @@ def upload_one(yt, item: dict, sched: dict, num: int, total: int,
 
 
 def upload_all(items: list, channel: dict, privacy: str = "public") -> list:
-    hdr(f"Uploading {len(items)} item(s) → {channel.get('real_name',channel.get('label','?'))}")
+    ch_name = channel.get("real_name", channel.get("label", "?"))
+    niche   = channel.get("niche", "general")
+    hdr(f"Uploading {len(items)} item(s) → {ch_name}")
 
-    # Smart algorithm-aware schedule — pass full item list so each gets correct mode-based timing
-    sched = make_schedule(items)
+    # ── GPU encoder status line ────────────────────────────────────────────────
+    if _FFMPEG_ENCODER != "libx264":
+        print(f"  {C.GREEN}⚡ Encoder: GPU ({_FFMPEG_ENCODER}) — hardware accelerated{C.RESET}")
+    else:
+        print(f"  {C.YELLOW}⚡ Encoder: CPU (libx264) — no GPU detected{C.RESET}")
 
-    shorts_count = sum(1 for x in items if x.get("mode")=="shorts")
-    videos_count = sum(1 for x in items if x.get("mode")=="video")
-    print(f"\n  📋 Upload summary:")
-    if shorts_count: print(f"     {shorts_count} Short(s) → Shorts feed  (random peak window, ±random minutes)")
-    if videos_count: print(f"     {videos_count} Video(s) → Videos section  (pre-peak slot for discovery)")
+    # ── Algorithm-aware schedule ───────────────────────────────────────────────
+    sched        = make_schedule(items, niche=niche)
+    shorts_count = sum(1 for x in items if x.get("mode") == "shorts")
+    videos_count = sum(1 for x in items if x.get("mode") == "video")
 
-    print(f"\n  📅 Smart Schedule (algorithm-aware, randomised):")
+    # ── Rich schedule preview table ────────────────────────────────────────────
+    w = 74
+    print(f"\n{C.CYAN}╔{'═'*w}╗{C.RESET}")
+    print(f"{C.CYAN}║{C.RESET}  {C.BOLD}{C.WHITE}{'📅  SMART UPLOAD SCHEDULE  (algorithm-optimised IST peak times)':<{w-2}}{C.RESET}{C.CYAN}║{C.RESET}")
+    print(f"{C.CYAN}╠{'═'*w}╣{C.RESET}")
+    if shorts_count:
+        row = f"  {C.GREEN}✦ {shorts_count} Short(s){C.RESET}  Shorts feed — inside niche peak window (random ±min)"
+        print(f"{C.CYAN}║{C.RESET}{row}")
+    if videos_count:
+        row = f"  {C.BLUE}✦ {videos_count} Video(s){C.RESET}  Videos section — 15-50 min pre-peak for search discovery"
+        print(f"{C.CYAN}║{C.RESET}{row}")
+    print(f"{C.CYAN}╠{'═'*w}╣{C.RESET}")
     for s in sched:
-        mode_label = "Short" if s.get("mode") == "shorts" else "Video"
-        print(f"     {s['n']}. [{mode_label:<5}]  {s['ist']}  ← {s.get('reasoning','peak window')}")
-    print()
+        is_short = s.get("mode") == "shorts"
+        k_col    = C.GREEN if is_short else C.BLUE
+        k_lbl    = "Short" if is_short else "Video"
+        peak_ic  = "🔥" if s.get("day", "") in ("Friday", "Saturday", "Sunday") else "  "
+        reason   = s.get("reasoning", "")[:38]
+        row = (f"  {C.BOLD}{s['n']:>2}.{C.RESET} [{k_col}{k_lbl:<5}{C.RESET}]  "
+               f"{C.BOLD}{s['ist']}{C.RESET}  {peak_ic}  {C.DIM}{reason}{C.RESET}")
+        print(f"{C.CYAN}║{C.RESET}{row}")
+    print(f"{C.CYAN}╚{'═'*w}╝{C.RESET}\n")
 
-    yt = _yt_client_for_channel(channel)
+    # ── Telegram: session start notification ───────────────────────────────────
+    _TG.send_session_start(ch_name, len(items), niche)
+
+    yt      = _yt_client_for_channel(channel)
     results = []
     for i, item in enumerate(items):
-        kind = "Short" if item.get("mode")=="shorts" else "Video"
+        kind = "Short" if item.get("mode") == "shorts" else "Video"
+
+        # ── Remote control: check for pause / skip from Telegram ───────────────
+        _TG.wait_if_paused()
+        if _TG.should_skip():
+            warn(f"Skipping upload #{i+1}: {item['title'][:50]} (via Telegram /skip)")
+            continue
+
+        _TG._current_title = item["title"]
         print(f"\n  {kind} {i+1}/{len(items)}: {item['title'][:55]}")
         try:
-            vid = upload_one(yt,item,sched[i],i+1,len(items),privacy=privacy)
-            url = (f"https://youtube.com/shorts/{vid}" if item.get("mode")=="shorts"
+            vid = upload_one(yt, item, sched[i], i+1, len(items), privacy=privacy)
+            url = (f"https://youtube.com/shorts/{vid}" if item.get("mode") == "shorts"
                    else f"https://www.youtube.com/watch?v={vid}")
-            results.append({"n":i+1,"type":kind,"title":item["title"],"id":vid,
-                             "url":url,"scheduled":sched[i]["ist"],
-                             "comment_prompt":item.get("comment_prompt","")})
+            results.append({
+                "n"             : i + 1,
+                "type"          : kind,
+                "title"         : item["title"],
+                "id"            : vid,
+                "url"           : url,
+                "scheduled"     : sched[i]["ist"],
+                "comment_prompt": item.get("comment_prompt", ""),
+            })
+            # ── Telegram: per-upload notification ─────────────────────────────
+            _TG.send_upload_notification(item, vid, sched[i]["ist"], i+1, len(items))
             time.sleep(2)
         except Exception as e:
             log.error(f"  ✗ Upload failed: {e}")
+
     ok(f"{len(results)}/{len(items)} uploaded")
+    _TG.send_session_end(len(results), len(items))
     return results
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -2988,9 +2579,9 @@ def download_viral(channel_url: str, n: int = 5) -> list:
 
     already_done = set(history.get(channel_url, []))
 
-    hdr(f"Viral Copy — channel: {channel_url[:50]}")
+    hdr(f"Viral Copy - channel: {channel_url[:50]}")
     if already_done:
-        print(f"  ℹ  {len(already_done)} video(s) already uploaded from this channel — skipping them")
+        print(f"  ℹ  {len(already_done)} video(s) already uploaded from this channel - skipping them")
 
     # ── Fetch video IDs + metadata from channel (no download yet) ────────────
     print("  Fetching video list from channel...")
@@ -3006,7 +2597,7 @@ def download_viral(channel_url: str, n: int = 5) -> list:
         result = subprocess.run(meta_cmd, capture_output=True, text=True, timeout=60)
         raw_lines = [l for l in result.stdout.strip().split("\n") if "|||" in l]
     except Exception as e:
-        log.warning(f"[Viral] Metadata fetch failed: {e} — falling back to direct download")
+        log.warning(f"[Viral] Metadata fetch failed: {e} - falling back to direct download")
         raw_lines = []
 
     # Parse and filter
@@ -3109,7 +2700,7 @@ def download_viral(channel_url: str, n: int = 5) -> list:
     ok(f"Downloaded {len(videos)} video(s)  |  History: {len(updated_done)} total from this channel")
     if downloaded_ids:
         print(f"  Next run will skip these {len(downloaded_ids)} video(s) and download the next batch.")
-    # Return original titles alongside videos — both sorted by view_count desc so order matches
+    # Return original titles alongside videos - both sorted by view_count desc so order matches
     _viral_titles = [v["title"] for v in to_download[:len(videos)]]
     return videos, _viral_titles
 
@@ -3136,7 +2727,7 @@ def fetch_original_meta(url: str) -> dict:
             capture_output=True, text=True, timeout=45, encoding="utf-8"
         )
         if result.returncode == 0 and result.stdout.strip():
-            # yt-dlp may return one JSON object per line for playlists — take first
+            # yt-dlp may return one JSON object per line for playlists - take first
             first_line = result.stdout.strip().splitlines()[0]
             data       = json.loads(first_line)
             orig_title = data.get("title", "")
@@ -3152,7 +2743,7 @@ def fetch_original_meta(url: str) -> dict:
 
 def ask_cleanup(source_videos: list, output_items: list):
     choice = menu(
-        "CLEANUP — What would you like to delete?",
+        "CLEANUP - What would you like to delete?",
         ["🗑️  Delete source videos only  (keep processed clips)",
          "🗑️  Delete processed clips only (keep source videos)",
          "🗑️  Delete BOTH               (free all space)",
@@ -3223,9 +2814,9 @@ def main_mode_menu(channel: dict) -> dict:
     # ── Source mode ──────────────────────────────────────────────────────────
     src_choice = menu(
         f"SOURCE MODE  (Channel: {ch_name[:40]})",
-        ["📥  Download from URL  — paste any YouTube/video URL",
-         "📂  Local upload       — videos already on this PC",
-         "🔥  Viral Copy         — download top videos from a channel"]
+        ["📥  Download from URL  - paste any YouTube/video URL",
+         "📂  Local upload       - videos already on this PC",
+         "🔥  Viral Copy         - download top videos from a channel"]
     )
     if src_choice == 1:
         session["source"]      = get_input("Paste video URL")
@@ -3247,9 +2838,9 @@ def main_mode_menu(channel: dict) -> dict:
     print("     VIDEOS section → original aspect ratio + no #shorts\n")
     ct = menu(
         "WHAT CONTENT TO CREATE?",
-        ["✂️   Shorts only        — 9:16 clips ≤58s → Shorts feed",
-         "🎬  Video clips        — 1-3min clips, original ratio → Videos section",
-         "📽️   Full video         — whole video, original ratio → Videos section",
+        ["✂️   Shorts only        - 9:16 clips ≤58s → Shorts feed",
+         "🎬  Video clips        - 1-3min clips, original ratio → Videos section",
+         "📽️   Full video         - whole video, original ratio → Videos section",
          "🎯  Shorts + Video clips (BOTH)",
          "🎯  Shorts + Full video  (BOTH)"]
     )
@@ -3277,9 +2868,9 @@ def main_mode_menu(channel: dict) -> dict:
     print("  SCHEDULED = videos visible at set time (watch hours count when published)")
     print("  PRIVATE = not visible, watch hours do NOT count\n")
     pv = menu("UPLOAD VISIBILITY?",
-              ["🟢  Public   — visible immediately, watch hours count NOW (RECOMMENDED)",
-               "📅  Scheduled — publish at IST peak times automatically",
-               "🔒  Private  — review before publishing"])
+              ["🟢  Public   - visible immediately, watch hours count NOW (RECOMMENDED)",
+               "📅  Scheduled - publish at IST peak times automatically",
+               "🔒  Private  - review before publishing"])
     session["privacy"] = ["public","scheduled","private"][pv-1]
 
     # ── Captions ─────────────────────────────────────────────────────────────
@@ -3290,8 +2881,8 @@ def main_mode_menu(channel: dict) -> dict:
     hdr("Language & Title Settings")
     lang_choice = menu(
         "TITLE & DESCRIPTION LANGUAGE?",
-        ["\U0001f1ec\U0001f1e7  English  — titles & descriptions written in English",
-         "\U0001f1ee\U0001f1f3  Hindi (\u0939\u093f\u0902\u0926\u0940)  — titles & descriptions in Hindi Devanagari script"]
+        ["\U0001f1ec\U0001f1e7  English  - titles & descriptions written in English",
+         "\U0001f1ee\U0001f1f3  Hindi (\u0939\u093f\u0902\u0926\u0940)  - titles & descriptions in Hindi Devanagari script"]
     )
     session["lang"] = "hindi" if lang_choice == 2 else "english"
     print(f"  {C.GREEN}\u2714  Language: {'Hindi \U0001f1ee\U0001f1f3' if session['lang'] == 'hindi' else 'English \U0001f1ec\U0001f1e7'}{C.RESET}")
@@ -3314,9 +2905,9 @@ def main_mode_menu(channel: dict) -> dict:
     print(f"  then generate yours based on the style you choose below.{C.RESET}")
     style_choice = menu(
         "TITLE & DESCRIPTION STYLE?",
-        ["\u2728  Enhance Original  — keep exact same meaning & topic, improve "
+        ["\u2728  Enhance Original  - keep exact same meaning & topic, improve "
          "format, hooks, emojis, CTR (RECOMMENDED)",
-         "\U0001f504  Write Fresh       — same niche & topic, completely new angle & wording"]
+         "\U0001f504  Write Fresh       - same niche & topic, completely new angle & wording"]
     )
     session["title_style"] = "enhance" if style_choice == 1 else "fresh"
     if style_choice == 1:
@@ -3341,13 +2932,19 @@ def main_mode_menu(channel: dict) -> dict:
 def main():
     print("""
 ╔══════════════════════════════════════════════════════════════╗
-║   🚀  ShortsBot  v10  — 10-Day Monetization Edition          ║
+║   🚀  ShortsBot  v10  - 10-Day Monetization Edition          ║
 ╠══════════════════════════════════════════════════════════════╣
 ║  Real channel names from YouTube API                         ║
 ║  Shorts → Shorts feed  |  Videos → Videos section           ║
 ║  Hindi / English support  |  Enhance or Fresh titles        ║
 ╚══════════════════════════════════════════════════════════════╝
 """)
+    _enc_lbl = (f"{C.GREEN}GPU ⚡ {_FFMPEG_ENCODER}{C.RESET}"
+                if _FFMPEG_ENCODER != "libx264" else f"{C.YELLOW}CPU (libx264){C.RESET}")
+    _tg_lbl  = (f"{C.GREEN}Telegram ON 📲{C.RESET}" if _TG.enabled
+                else f"{C.DIM}Telegram OFF  (add TELEGRAM_BOT_TOKEN to .env){C.RESET}")
+    print(f"  ⚡ Encoder   : {_enc_lbl}")
+    print(f"  🔔 Telegram  : {_tg_lbl}\n")
 
     # ─────────────────────────────────────────────────────────────────────────
     #  RESUME vs FRESH START
@@ -3372,7 +2969,7 @@ def main():
             f"Niche   : {niche}",
             f"Source  : {session.get('source', '?')[:55]}",
             f"Saved   : {cp.get('saved_at', '')[:16]}",
-        ], "Skipping menus — restoring saved settings")
+        ], "Skipping menus - restoring saved settings")
         ensure_music()
         research = research_niche(niche)
         # On resume: regenerate strategy from cache (won't call Gemini if <24h old)
@@ -3384,7 +2981,7 @@ def main():
     else:
         # ── FRESH START: full interactive menu ────────────────────────────
         if cp:
-            warn("Checkpoint has no saved session — starting fresh")
+            warn("Checkpoint has no saved session - starting fresh")
             clear_cp()
         step = "downloading"   # always start from the top on a fresh run
 
@@ -3424,16 +3021,16 @@ def main():
     session_original_desc  = ""
 
     if step in ("processing", "uploading"):
-        # Skip download — raw files already on disk from the interrupted run
+        # Skip download - raw files already on disk from the interrupted run
         videos = sorted(RAW_DIR.glob("*.mp4"))
-        ok(f"Skipping download (step={step}) — "
+        ok(f"Skipping download (step={step}) - "
            f"using {len(videos)} file(s) already in output/raw/")
         # Restore original meta from checkpoint if available
         session_original_title = session.get("_orig_title", "")
         session_original_desc  = session.get("_orig_desc",  "")
 
     else:
-        # step == "downloading" — do the actual download
+        # step == "downloading" - do the actual download
         if st == "viral":
             videos, viral_titles_list = download_viral(
                 session["source"], session.get("viral_count", 5))
@@ -3456,12 +3053,12 @@ def main():
                     print(f"  {C.DIM}Description: "
                           f"{session_original_desc[:80]}...{C.RESET}")
             else:
-                warn("Could not fetch original metadata — AI will generate fresh")
+                warn("Could not fetch original metadata - AI will generate fresh")
         elif st == "viral" and viral_titles_list:
             print(f"  {C.DIM}Viral mode: per-video original titles captured "
                   f"({len(viral_titles_list)} video(s)){C.RESET}")
         else:
-            print(f"  {C.DIM}Local mode — AI generates from niche context{C.RESET}")
+            print(f"  {C.DIM}Local mode - AI generates from niche context{C.RESET}")
 
         # Persist orig meta into session so a crash here can restore it on resume
         session["_orig_title"] = session_original_title
@@ -3480,9 +3077,9 @@ def main():
     #  • otherwise  → process now
     # ─────────────────────────────────────────────────────────────────────────
     if step == "uploading" and cp and cp.get("all_items"):
-        # Skip processing — restore the already-processed item list
+        # Skip processing - restore the already-processed item list
         all_items = cp["all_items"]
-        ok(f"Skipping processing — restored {len(all_items)} item(s) from checkpoint")
+        ok(f"Skipping processing - restored {len(all_items)} item(s) from checkpoint")
 
     else:
         all_items    = []
@@ -3547,6 +3144,7 @@ def main():
     # ─────────────────────────────────────────────────────────────────────────
     #  STEP 5: UPLOAD
     # ─────────────────────────────────────────────────────────────────────────
+    _TG.start_polling()   # start Telegram remote-control thread before upload loop
     uploaded = upload_all(all_items, channel, session.get("privacy", "public"))
 
     # ─────────────────────────────────────────────────────────────────────────
@@ -3560,19 +3158,28 @@ def main():
 
 if __name__ == "__main__":
     main()
-=======
-        w     = 8000
-        energy = np.array([np.sqrt(np.mean(audio[i:i+w]**2)) for i in range(0,len(audio)-w,w)])
-        peaks, _ = find_peaks(energy, height=np.percentile(energy,70), distance=30)
-        dur   = CONFIG["shorts_duration"]
-        clips = [(max(0,p-dur//2), max(0,p-dur//2)+dur) for p in peaks[:num]]
-        if clips: return clips
-    except ImportError:
-        log.warning("[Highlights] numpy/scipy missing — even-spaced clips")
-    total = get_duration(path)
-    dur   = CONFIG["shorts_duration"]
-    step  = total / (num + 1)
-    return [(int(step*i), int(step*i)+dur) for i in range(1, num+1)]
+
+#  ULTIMATE EDITION MUSIC CONFIG
+CONFIG = {
+    "bensound_tracks": [
+        {"name":"bs_energy.mp3",     "url":"https://www.bensound.com/bensound-music/bensound-energy.mp3"},
+        {"name":"bs_ukulele.mp3",    "url":"https://www.bensound.com/bensound-music/bensound-ukulele.mp3"},
+        {"name":"bs_littleidea.mp3", "url":"https://www.bensound.com/bensound-music/bensound-littleidea.mp3"},
+        {"name":"bs_sunny.mp3",      "url":"https://www.bensound.com/bensound-music/bensound-sunny.mp3"},
+        {"name":"bs_adventure.mp3",  "url":"https://www.bensound.com/bensound-music/bensound-adventure.mp3"},
+        {"name":"bs_dubstep.mp3",    "url":"https://www.bensound.com/bensound-music/bensound-dubstep.mp3"},
+        {"name":"bs_epic.mp3",       "url":"https://www.bensound.com/bensound-music/bensound-epic.mp3"},
+        {"name":"bs_summer.mp3",     "url":"https://www.bensound.com/bensound-music/bensound-summer.mp3"},
+    ],
+    "pixabay_tracks": [
+        {"name":"px_lofi.mp3",       "url":"https://cdn.pixabay.com/download/audio/2022/05/27/audio_1808fbf07a.mp3"},
+        {"name":"px_upbeat.mp3",     "url":"https://cdn.pixabay.com/download/audio/2022/03/10/audio_270f49c5e9.mp3"},
+        {"name":"px_motivate.mp3",   "url":"https://cdn.pixabay.com/download/audio/2021/11/25/audio_5b5bb9e0a6.mp3"},
+        {"name":"px_cinematic.mp3",  "url":"https://cdn.pixabay.com/download/audio/2022/01/18/audio_d0fd6a0f9e.mp3"},
+        {"name":"px_corporate.mp3",  "url":"https://cdn.pixabay.com/download/audio/2022/08/02/audio_884fe92c21.mp3"},
+        {"name":"px_happy.mp3",      "url":"https://cdn.pixabay.com/download/audio/2021/08/09/audio_dc39bde5b9.mp3"},
+    ]
+}
 
 
 def crop_vertical_lossless(src: Path, dst: Path, start: int, end: int):
@@ -3582,16 +3189,16 @@ def crop_vertical_lossless(src: Path, dst: Path, start: int, end: int):
     """
     duration = end - start
     # Use ffmpeg -progress pipe to read frame count live
-    cmd = [
-        "ffmpeg", "-y",
-        "-ss", str(start), "-i", str(src), "-t", str(duration),
-        "-vf", "scale=iw*max(1080/iw\\,1920/ih):ih*max(1080/iw\\,1920/ih),crop=1080:1920",
-        "-c:v", "libx264", "-crf", "18", "-preset", "slow",
-        "-profile:v", "high", "-level", "4.1", "-pix_fmt", "yuv420p",
-        "-c:a", "aac", "-b:a", "192k",
-        "-progress", "pipe:1", "-nostats",
-        str(dst)
-    ]
+    cmd = (
+        ["ffmpeg", "-y"] + _FFMPEG_HW_FLAGS +
+        ["-ss", str(start), "-i", str(src), "-t", str(duration),
+         "-vf", "scale=iw*max(1080/iw\\,1920/ih):ih*max(1080/iw\\,1920/ih),crop=1080:1920",
+         "-c:v", _FFMPEG_ENCODER] + _gpu_encode_flags(18) +
+        ["-pix_fmt", "yuv420p",
+         "-c:a", "aac", "-b:a", "192k",
+         "-progress", "pipe:1", "-nostats",
+         str(dst)]
+    )
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
                             text=True)
     frame = 0
@@ -3622,363 +3229,12 @@ def crop_vertical_lossless(src: Path, dst: Path, start: int, end: int):
     progress_bar(total_frames, total_frames, "Encoding 9:16 lossless")
 
 
-def mix_music(src: Path, dst: Path, track: Path | None):
-    if not track:
-        shutil.copy(src, dst)
-        return
-    dur = get_duration(src)
-    vol = CONFIG["music_volume"]
-    cmd = [
-        "ffmpeg", "-y", "-i", str(src),
-        "-stream_loop", "-1", "-i", str(track),
-        "-filter_complex",
-        f"[1:a]volume={vol},atrim=0:{dur}[m];[0:a][m]amix=inputs=2:duration=first[a]",
-        "-map","0:v","-map","[a]",
-        "-c:v","copy","-c:a","aac","-b:a","192k", str(dst)
-    ]
-    subprocess.run(cmd, check=True, capture_output=True)
 
 
-def process_video(video_path: Path, title_base: str,
-                  niche: str = "general") -> list[dict]:
-    SHORTS_DIR.mkdir(parents=True, exist_ok=True)
-    shorts = []
-    clips  = detect_highlights(video_path, CONFIG["max_shorts_per_video"])
-    total_steps = len(clips) * 4   # crop, caption, music, upload-prep
+def task_header(title: str):
+    print(f"\n{'─'*60}")
+    print(f"  ▶  {title}")
+    print(f"{'─'*60}")
 
-    task_header(f"Processing: {title_base}  ({len(clips)} clips)")
-
-    for i, (start, end) in enumerate(clips):
-        base_step = i * 4
-        print(f"\n  Clip {i+1}/{len(clips)}  —  {start}s → {end}s")
-        dur  = end - start
-        base = SHORTS_DIR / f"{title_base}_short_{i+1}"
-        f_crop  = Path(str(base)+"_crop.mp4")
-        f_cap   = Path(str(base)+"_cap.mp4")
-        f_final = Path(str(base)+"_final.mp4")
-
-        # Step A — Crop (lossless)
-        progress_bar(base_step+1, total_steps, "Cropping to 9:16 (lossless)")
-        crop_vertical_lossless(video_path, f_crop, start, end)
-
-        # Step B — Transcribe + captions
-        progress_bar(base_step+2, total_steps, "Groq Whisper transcribing...")
-        audio_chunk = extract_audio_chunk(video_path, start, dur)
-        words       = transcribe_groq(audio_chunk)
-        transcript  = " ".join(w["word"] for w in words)
-        audio_chunk.unlink(missing_ok=True)
-
-        # Step C — AI metadata
-        progress_bar(base_step+3, total_steps, "Gemini writing title & tags...")
-        meta = generate_metadata(title_base, transcript, i, niche)
-
-        if words:
-            srt = Path(str(base)+".srt")
-            srt.write_text(build_srt(words), encoding="utf-8")
-            burn_srt(f_crop, f_cap, srt)
-            srt.unlink(missing_ok=True)
-        else:
-            burn_placeholder(f_crop, f_cap, meta.get("caption_overlay", title_base))
-
-        # Step D — Music mix
-        progress_bar(base_step+4, total_steps, "Mixing mood-matched music...")
-        mood  = meta.get("mood", "energetic")
-        track = fetch_jamendo_track(mood)
-        if not track:
-            track = _any_cached_music()
-        mix_music(f_cap, f_final, track)
-
-        for tmp in [f_crop, f_cap]:
-            tmp.unlink(missing_ok=True)
-
-        desc = meta["description"]
-        if track and "bs_" in track.name:
-            desc += "\n\nMusic: www.bensound.com"
-
-        shorts.append({
-            "path"         : str(f_final),
-            "title"        : meta["title"][:100],
-            "description"  : desc[:5000],
-            "tags"         : meta.get("tags", CONFIG["youtube"]["base_tags"]),
-            "transcript"   : transcript[:300],
-            "mood"         : mood,
-            "music_track"  : track.name if track else "none",
-            "title_variants": meta.get("title_variants", []),
-        })
-
-        progress_bar(total_steps, total_steps, f"Clip {i+1} complete ✓")
-        print(f"\n  Title: {meta['title'][:65]}")
-
-    task_done(f"All {len(shorts)} clips processed for: {title_base}")
-    return shorts
-
-# ══════════════════════════════════════════════════════════════════════════════
-#  UPLOAD + PROGRESS BAR
-# ══════════════════════════════════════════════════════════════════════════════
-
-def upload_short(youtube, short: dict, publish_at: datetime,
-                 short_num: int, total: int) -> str:
-    from googleapiclient.http import MediaFileUpload
-    pub_str = publish_at.strftime("%Y-%m-%dT%H:%M:%S.000Z")
-    body = {
-        "snippet": {
-            "title"      : short["title"],
-            "description": short["description"],
-            "tags"       : short["tags"],
-            "categoryId" : CONFIG["youtube"]["category_id"],
-        },
-        "status": {
-            "privacyStatus"          : "private",
-            "publishAt"              : pub_str,
-            "selfDeclaredMadeForKids": False,
-        },
-    }
-    media   = MediaFileUpload(short["path"], mimetype="video/mp4", resumable=True,
-                              chunksize=1024*1024)
-    request = youtube.videos().insert(part="snippet,status", body=body, media_body=media)
-    response = None
-    while response is None:
-        status, response = request.next_chunk()
-        if status:
-            upload_pct = int(status.progress() * 100)
-            overall    = int(((short_num - 1 + status.progress()) / total) * 100)
-            progress_bar(overall, 100,
-                         f"Short {short_num}/{total} uploading... {upload_pct}%")
-    progress_bar(int(short_num/total*100), 100, f"Short {short_num}/{total} uploaded ✓")
-    return response["id"]
-
-
-def schedule_and_upload(shorts: list[dict], account_name: str = "default") -> list[dict]:
-    task_header(f"Uploading {len(shorts)} Shorts to YouTube ({account_name})")
-    youtube  = authenticate_youtube(account_name)
-    interval = timedelta(hours=CONFIG["upload_interval_hours"])
-    now      = datetime.utcnow()
-    results  = []
-
-    for i, short in enumerate(shorts):
-        publish_at = now + interval * (i + 1)
-        print(f"\n  Short {i+1}/{len(shorts)}: {short['title'][:55]}")
-        try:
-            vid = upload_short(youtube, short, publish_at, i+1, len(shorts))
-            results.append({
-                "short_number" : i + 1,
-                "title"        : short["title"],
-                "id"           : vid,
-                "url"          : f"https://youtube.com/shorts/{vid}",
-                "scheduled_at" : str(publish_at),
-                "mood"         : short.get("mood",""),
-                "music_track"  : short.get("music_track",""),
-                "title_variants": short.get("title_variants",[]),
-            })
-            time.sleep(2)
-        except Exception as e:
-            log.error(f"  ✗ Upload failed: {e}")
-
-    task_done(f"{len(results)}/{len(shorts)} Shorts uploaded successfully")
-    return results
-
-# ══════════════════════════════════════════════════════════════════════════════
-#  REPORT + COMPLETION BANNER
-# ══════════════════════════════════════════════════════════════════════════════
-
-def save_report_and_notify(results: list[dict], total_shorts: int):
-    report = {
-        "run_at"      : str(datetime.now()),
-        "total_shorts": total_shorts,
-        "uploaded"    : len(results),
-        "shorts"      : results,
-    }
-    for dest in [MANIFEST, DESKTOP]:
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_text(json.dumps(report, indent=2), encoding="utf-8")
-
-    print(f"""
-╔══════════════════════════════════════════════════════════════╗
-║           ✅  ALL TASKS COMPLETED SUCCESSFULLY  ✅            ║
-╠══════════════════════════════════════════════════════════════╣
-║  Shorts created   : {total_shorts:<5}                                    ║
-║  Shorts uploaded  : {len(results):<5}                                    ║
-║  Schedule gap     : Every {CONFIG['upload_interval_hours']} hours                          ║
-╠══════════════════════════════════════════════════════════════╣""")
-
-    for r in results:
-        url_line  = f"  Short {r['short_number']}  →  {r['url']}"
-        sched_line = f"  Scheduled : {r['scheduled_at'][:19]}"
-        print(f"║ {url_line:<62}║")
-        print(f"║ {sched_line:<62}║")
-        if r.get("title_variants"):
-            for alt in r["title_variants"][:1]:
-                print(f"║   Alt title: {alt[:57]:<57}║")
-        print(f"║ {'─'*62}║")
-
-    print(f"""╠══════════════════════════════════════════════════════════════╣
-║  📄 Report → Desktop/upload_manifest.json                    ║
-║  📄 Report → C:\\ShortsBot\\upload_manifest.json              ║
-║  🗃️  Deleted source videos logged → processed_videos.json    ║
-║  📋 Full log → C:\\ShortsBot\\automation.log                  ║
-╚══════════════════════════════════════════════════════════════╝
-""")
-
-# ══════════════════════════════════════════════════════════════════════════════
-#  SOURCE DOWNLOADERS
-# ══════════════════════════════════════════════════════════════════════════════
-
-def download_video_url(url: str) -> list[Path]:
-    """
-    Download exactly ONE video from a URL.
-    Clears RAW_DIR and SHORTS_DIR first so no old clips bleed into this run.
-    """
-    # Clean previous run's files so only THIS video's Shorts get uploaded
-    for d in [RAW_DIR, SHORTS_DIR]:
-        if d.exists():
-            shutil.rmtree(d)
-        d.mkdir(parents=True, exist_ok=True)
-
-    task_header(f"Downloading video: {url[:60]}")
-    subprocess.run([
-        "yt-dlp",
-        "--format", "bestvideo[height<=1080]+bestaudio/best[height<=1080]",
-        "--merge-output-format", "mp4",
-        "--output", str(RAW_DIR / "%(title)s.%(ext)s"),
-        "--no-playlist", url
-    ], check=True)
-    vids = list(RAW_DIR.glob("*.mp4"))
-    task_done(f"Downloaded {len(vids)} video(s)  |  Old clips cleared ✓")
-    return vids
-
-
-def download_channel(url: str, max_videos: int = 5) -> list[Path]:
-    RAW_DIR.mkdir(parents=True, exist_ok=True)
-    task_header(f"Downloading latest {max_videos} videos from channel")
-    subprocess.run([
-        "yt-dlp",
-        "--format", "bestvideo[height<=1080]+bestaudio/best[height<=1080]",
-        "--merge-output-format", "mp4",
-        "--output", str(RAW_DIR / "%(title)s.%(ext)s"),
-        "--playlist-end", str(max_videos), url
-    ], check=True)
-    vids = list(RAW_DIR.glob("*.mp4"))
-    task_done(f"Downloaded {len(vids)} video(s)")
-    return vids
-
-
-def collect_local(folder: str) -> list[Path]:
-    exts   = {".mp4", ".mov", ".mkv", ".avi", ".webm"}
-    videos = [p for p in Path(folder).iterdir() if p.suffix.lower() in exts]
-    task_done(f"Found {len(videos)} local video(s)")
-    return videos
-
-# ══════════════════════════════════════════════════════════════════════════════
-#  MAIN ORCHESTRATOR
-# ══════════════════════════════════════════════════════════════════════════════
-
-def run(source: str, source_type: str = "auto", niche: str = "general",
-        scrape_viral: bool = False, viral_channel: str = ""):
-
-    print("""
-╔══════════════════════════════════════════════════════════════╗
-║      🚀  YouTube Shorts AI Automation  —  Ultimate v5        ║
-╠══════════════════════════════════════════════════════════════╣
-║  Captions   : Groq Whisper Large v3 Turbo  (free)            ║
-║  Titles     : Google Gemini 2.5 Flash      (free)            ║
-║  Music      : Jamendo + Bensound + Pixabay (free, 20 tracks) ║
-║  Quality    : Lossless CRF-18 encoding                       ║
-╚══════════════════════════════════════════════════════════════╝
-""")
-
-    # ── Check for resume ────────────────────────────────────────────────────
-    cp = ask_resume()
-    if cp:
-        print(f"\n  Resuming from step: {cp.get('step')}")
-        source      = cp.get("source", source)
-        source_type = cp.get("source_type", source_type)
-        niche       = cp.get("niche", niche)
-
-    # ── Select YouTube account ───────────────────────────────────────────────
-    account = select_youtube_account()
-
-    # ── Optional: scrape viral Shorts to learn from ─────────────────────────
-    if scrape_viral and viral_channel:
-        scrape_viral_shorts(viral_channel, max_shorts=10)
-    elif scrape_viral:
-        vc = input("\n  Enter channel URL to scrape viral Shorts from: ").strip()
-        if vc:
-            scrape_viral_shorts(vc, max_shorts=10)
-
-    # ── Pre-download music ───────────────────────────────────────────────────
-    ensure_starter_music()
-
-    # ── Auto-detect source type ──────────────────────────────────────────────
-    if source_type == "auto":
-        if source.startswith("http") and ("@" in source or "/c/" in source or "/channel/" in source):
-            source_type = "channel"
-        elif source.startswith("http"):
-            source_type = "url"
-        else:
-            source_type = "local"
-
-    # ── Save checkpoint ──────────────────────────────────────────────────────
-    save_checkpoint({
-        "step"       : "downloading",
-        "source"     : source,
-        "source_type": source_type,
-        "niche"      : niche,
-        "account"    : account,
-        "saved_at"   : str(datetime.now()),
-    })
-
-    # ── Collect videos ───────────────────────────────────────────────────────
-    if cp and cp.get("step") not in ("downloading",):
-        videos = list(RAW_DIR.glob("*.mp4"))
-        log.info(f"[Resume] Using {len(videos)} already-downloaded video(s)")
-    elif source_type == "url":
-        videos = download_video_url(source)
-    elif source_type == "channel":
-        videos = download_channel(source)
-    else:
-        videos = collect_local(source)
-
-    if not videos:
-        log.error("No videos found. Check your source URL or folder path.")
-        sys.exit(1)
-
-    save_checkpoint({"step":"processing","source":source,
-                     "source_type":source_type,"niche":niche,
-                     "account":account,"saved_at":str(datetime.now())})
-
-    # ── Process each video ───────────────────────────────────────────────────
-    all_results = []
-    for vi, video in enumerate(videos):
-        title  = "".join(c for c in video.stem[:40] if c.isalnum() or c in " _-").strip()
-        shorts = process_video(video, title, niche)
-
-        save_checkpoint({"step":"uploading","source":source,
-                         "source_type":source_type,"niche":niche,
-                         "account":account,"saved_at":str(datetime.now()),
-                         "video_index":vi})
-
-        # Upload this video's Shorts immediately
-        uploaded = schedule_and_upload(shorts, account)
-        all_results.extend(uploaded)
-
-        # Delete source video + log it
-        record_and_delete_source(video, source, uploaded)
-
-    # ── Final report ─────────────────────────────────────────────────────────
-    save_report_and_notify(all_results, sum(1 for _ in all_results))
-    clear_checkpoint()   # run completed — remove checkpoint
-
-
-if __name__ == "__main__":
-    ap = argparse.ArgumentParser(description="YouTube Shorts AI Automation — Ultimate v5")
-    ap.add_argument("source",          help="YouTube URL, channel URL, or local folder path")
-    ap.add_argument("--type",          choices=["url","channel","local","auto"], default="auto")
-    ap.add_argument("--niche",         default="general",
-                    help='e.g. "fitness" "cooking" "finance" "gaming" "motivation"')
-    ap.add_argument("--scrape-viral",  action="store_true",
-                    help="Scrape top viral Shorts from a channel to improve AI writing")
-    ap.add_argument("--viral-channel", default="",
-                    help="Channel URL to scrape viral Shorts from (used with --scrape-viral)")
-    args = ap.parse_args()
-    run(args.source, args.type, args.niche, args.scrape_viral, args.viral_channel)
->>>>>>> 64497acc2905e2ab02e72faaffb871464a15f9a7
+def task_done(title: str):
+    print(f"  ✅  {title} - DONE")
