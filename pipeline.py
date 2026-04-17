@@ -661,41 +661,25 @@ def gemini(prompt: str, max_retries: int = 5) -> str:
                 except Exception:
                     status = 500
 
-            if status in (400, 401, 403):
-                # Invalid / unauthorized key — blacklist silently
+            if status in (400, 401, 403, 429):
                 _gemini_key_exhausted.add((provider, current_key))
-                attempt += 1
-                continue
-
-            if status == 429:
-                # Quota hit — blacklist this key, jump to next available
-                _gemini_key_exhausted.add((provider, current_key))
+                
+                # Find the next available non-blacklisted configuration
                 next_available = None
-                for j in range(1, len(all_configs) + 1):
-                    np_, nm, nk, _ = all_configs[(config_idx + j) % len(all_configs)]
-                    if (np_, nk) not in _gemini_key_exhausted:
-                        next_available = (np_, nm)
+                for c in all_configs:
+                    if (c[0], c[2]) not in _gemini_key_exhausted:
+                        next_available = (c[0], c[1])
                         break
+                        
                 if next_available:
                     np_, nm = next_available
-                    label = nm if np_ == "gemini" else np_.capitalize()
-                    print(f"  {C.YELLOW}⚡ Rate limit → switching to {label}{C.RESET}")
-                    time.sleep(1)
+                    if status == 429:
+                        label = nm if np_ == "gemini" else np_.capitalize()
+                        print(f"  {C.YELLOW}⚡ Rate limit → switching to {label}{C.RESET}")
+                        time.sleep(1)
                 else:
-                    # Every provider is exhausted — cooldown then retry all
-                    cycle = attempt // len(all_configs)
-                    if cycle not in cycle_logged:
-                        cycle_logged.add(cycle)
-                        wait = waits[min(cycle, len(waits) - 1)]
-                        print(f"\n  {C.YELLOW}⏳ All AI providers rate-limited — "
-                              f"waiting {wait}s (retry {cycle+1}/{max_retries})...{C.RESET}")
-                        for rem in range(wait, 0, -1):
-                            sys.stdout.write(f"\r     resuming in {rem:3d}s ...  ")
-                            sys.stdout.flush()
-                            time.sleep(1)
-                        sys.stdout.write("\r" + " " * 40 + "\r")
-                        sys.stdout.flush()
-                        _gemini_key_exhausted.clear()  # reset after cooldown
+                    raise RuntimeError("All AI providers completely rate limited or exhausted. Quota is gone for today.")
+                        
                 attempt += 1
                 continue
 
@@ -2919,9 +2903,20 @@ def main_mode_menu(channel: dict) -> dict:
 
     # ── Niche ────────────────────────────────────────────────────────────────
     if yn(f"  Change niche from '{niche}'?", default=False):
-        niches = list(NICHE_TAGS.keys())
-        ni = menu("SELECT NICHE", niches)
-        session["niche"] = niches[ni-1]
+        new_niche = input(f"  Enter new niche (e.g. 'Finance', 'Tech'): ").strip()
+        if new_niche:
+            session["niche"] = new_niche
+            try:
+                import json
+                settings_file = Path(channel["folder"]) / "settings.json"
+                s = {}
+                if settings_file.exists():
+                    s = json.loads(settings_file.read_text(encoding="utf-8"))
+                s["niche"] = new_niche
+                settings_file.write_text(json.dumps(s, indent=2), encoding="utf-8")
+                print(f"  ✅ Niche permanently saved to settings.json as '{new_niche}'")
+            except Exception:
+                pass
 
     return session
 
@@ -2932,7 +2927,7 @@ def main_mode_menu(channel: dict) -> dict:
 def main():
     print("""
 ╔══════════════════════════════════════════════════════════════╗
-║   🚀  ShortsBot  v10  - 10-Day Monetization Edition          ║
+║   🚀  ShortsBot  v11                                         ║
 ╠══════════════════════════════════════════════════════════════╣
 ║  Real channel names from YouTube API                         ║
 ║  Shorts → Shorts feed  |  Videos → Videos section           ║
@@ -3000,8 +2995,6 @@ def main():
 
         # Generate AI-powered strategy (Gemini, adapts to this channel's stage)
         strategy = generate_monetization_strategy(channel)
-        if yn("Show AI monetization strategy?", default=True):
-            show_monetization_strategy(channel, strategy)
 
         # STEP 2: All options
         session = main_mode_menu(channel)
