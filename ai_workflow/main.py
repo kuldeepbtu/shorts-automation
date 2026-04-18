@@ -37,6 +37,7 @@ from ai_workflow.media_engine import (
     generate_voice, generate_image, generate_all_scenes_parallel,
     concat_scenes, add_background_music, burn_subtitles,
     generate_thumbnail, auto_clip_video_to_shorts,
+    generate_music_lyria,
     _all_gemini_keys, _available_keys,
 )
 
@@ -195,6 +196,14 @@ def run():
     print(f"  ✅ {len(scenes)} scenes | ~{total_words} words | "
           f"est. {total_words//150:.1f}–{total_words//130:.1f} min")
 
+    print(f"\n  {C.CYAN}📖 STORYLINE SCENES:{C.RESET}")
+    for i, s in enumerate(scenes, 1):
+        preview = s.get("text", "").replace("\n", " ").strip()
+        if len(preview) > 90:
+            preview = preview[:87] + "..."
+        print(f"    🎬 Scene {i}: {C.DIM}{preview}{C.RESET}")
+    print()
+
     if niche_cfg.is_kids:
         print(f"  {C.YELLOW}🔒 Kids safety: Grade-3 vocabulary, no forbidden topics{C.RESET}")
 
@@ -266,8 +275,17 @@ def run():
 
     ensure_music()
     music_dir = Path(__file__).parent.parent / "assets" / "music"
+    
+    specific_bgm = None
+    key = avail_keys[0] if avail_keys else ""
+    if key:
+        lyria_out = AI_WORKSPACE / f"{safe_topic}_bgm.mp3"
+        bgm_prompt = f"Instrumental only, no vocals. {topic_data.get('vibe', 'engaging')} background music tailored for: {topic_data.get('topic', 'YouTube Video')}."
+        if generate_music_lyria(bgm_prompt, lyria_out, key):
+            specific_bgm = lyria_out
+
     print("  🎵 Mixing background music…")
-    add_background_music(assembled, music_dir, with_bgm)
+    add_background_music(assembled, music_dir, with_bgm, specific_bgm)
     ok("Background music added")
 
     # ════════════════════════════════════════════════════════════════════════

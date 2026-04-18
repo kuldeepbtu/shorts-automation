@@ -645,7 +645,7 @@ def gemini(prompt: str, max_retries: int = 5) -> str:
                     endpoint,
                     {"model": current_model,
                      "messages": [{"role": "user", "content": prompt}],
-                     "max_tokens": 1024},
+                     "max_tokens": 8192},
                     {"Content-Type": "application/json",
                      "Authorization": f"Bearer {current_key}",
                      **extra_headers}

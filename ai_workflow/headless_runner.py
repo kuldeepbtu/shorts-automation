@@ -45,6 +45,7 @@ from ai_workflow.media_engine import (
     generate_voice, generate_image, generate_all_scenes_parallel,
     concat_scenes, add_background_music, burn_subtitles,
     generate_thumbnail, auto_clip_video_to_shorts,
+    generate_music_lyria,
     _all_gemini_keys, _available_keys,
 )
 
@@ -381,7 +382,16 @@ def run_headless(
 
         ensure_music()
         music_dir = BASE_DIR / "assets" / "music"
-        add_background_music(assembled, music_dir, with_bgm)
+        specific_bgm = None
+        key = avail_keys[0] if avail_keys else ""
+        if key:
+            log.info("[Headless] Generating custom Lyria 3 BGM…")
+            lyria_out = AI_WORKSPACE / f"{safe_name}_bgm.mp3"
+            bgm_prompt = f"Instrumental only, no vocals. {topic_data.get('vibe', 'engaging')} background music tailored for: {topic_data.get('topic', 'YouTube Video')}."
+            if generate_music_lyria(bgm_prompt, lyria_out, key):
+                specific_bgm = lyria_out
+
+        add_background_music(assembled, music_dir, with_bgm, specific_bgm)
         log.info("[Headless] Background music added")
 
         # ────────────────────────────────────────────────────────────────────

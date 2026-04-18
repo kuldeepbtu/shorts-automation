@@ -260,7 +260,7 @@ def _image_nanobanana(prompt: str, w: int, h: int, output_path: Path, api_key: s
                 model="gemini-3.1-flash-image-preview",
                 contents=prompt,
                 config=gtypes.GenerateContentConfig(
-                    response_modalities=["image"],
+                    response_modalities=["IMAGE"],
                 ),
             )
             for part in resp.candidates[0].content.parts:
@@ -506,9 +506,6 @@ def _generate_veo(
                         config=gtypes.GenerateVideosConfig(
                             aspect_ratio=aspect,
                             duration_seconds=veo_duration,
-                            number_of_videos=1,
-                            enhance_prompt=True,
-                            generate_audio=True,
                         ),
                     )
 
@@ -614,9 +611,6 @@ def _veo_rest(img_b64: str, prompt: str, aspect: str, duration: int,
                 "parameters": {
                     "aspectRatio"    : aspect,
                     "durationSeconds": duration,
-                    "numberOfVideos" : 1,
-                    "enhancePrompt"  : True,
-                    "generateAudio"  : True,
                     "outputOptions"  : {"mimeType": "video/mp4"},
                 },
             }
@@ -819,14 +813,47 @@ def concat_scenes(scene_videos: list, output_path: Path):
     print(f" ✅ {sz}MB → {output_path.name}")
 
 
-def add_background_music(video_path: Path, music_dir: Path, final_path: Path):
-    files = list(music_dir.glob("*.mp3")) + list(music_dir.glob("*.wav"))
-    if not files:
-        log.warning("[BGM] No music files — skipping")
-        shutil.copy2(video_path, final_path)
-        return
+def generate_music_lyria(prompt: str, output_path: Path, api_key: str) -> bool:
+    """Generate background music using Lyria 3 (lyria-3-pro-preview)."""
+    client = _genai_client(api_key)
+    if not client:
+        return False
+    print(f"    🎵 Generating BGM (Lyria 3)…", end="", flush=True)
+    try:
+        from google.genai import types as gtypes
+        resp = client.models.generate_content(
+            model="lyria-3-pro-preview",
+            contents=prompt,
+        )
+        audio_data = None
+        for part in resp.candidates[0].content.parts:
+            if hasattr(part, "inline_data") and part.inline_data:
+                data = part.inline_data.data
+                if isinstance(data, str):
+                    data = base64.b64decode(data)
+                audio_data = data
+        if audio_data:
+            output_path.write_bytes(audio_data)
+            print(f" ✅ {len(audio_data)//1024}KB")
+            return True
+        print(f" ❌ No audio returned")
+    except Exception as e:
+        log.warning(f"[Lyria] {e}")
+        print(f" ❌ Failed")
+    return False
 
-    bgm = files[hash(str(video_path)) % len(files)]
+
+def add_background_music(video_path: Path, music_dir: Path, final_path: Path, specific_bgm: Path = None):
+    bgm = None
+    if specific_bgm and specific_bgm.exists():
+        bgm = specific_bgm
+    else:
+        files = list(music_dir.glob("*.mp3")) + list(music_dir.glob("*.wav"))
+        if not files:
+            log.warning("[BGM] No music files — skipping")
+            shutil.copy2(video_path, final_path)
+            return
+        bgm = files[hash(str(video_path)) % len(files)]
     print(f"  🎵 Adding BGM: {bgm.name}…", end="", flush=True)
     cmd = [
         "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",

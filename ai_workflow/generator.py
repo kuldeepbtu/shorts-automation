@@ -333,27 +333,25 @@ VIBE/TONE: {topic_data['vibe']}
 FORMAT: {format_desc}
 SCRIPT STYLE: {niche_cfg.script_style}
 WORD COUNT TARGET: {word_min}–{word_max} words total across all scenes.
+Generate exactly {max(2, word_min // 50)} to {word_max // 40} scenes. Each scene should have 30–60 words of narration.
 {kids_rules}
 
 SCENE RULES:
 - Each scene = 1 visual shot + spoken narration for that shot.
-- image_prompt: VERY detailed visual description for AI video generation.
+- image_prompt: Keep it under 15 words. VERY specific visual description for AI generation (lighting, subject, action).
   Base style to use: "{image_style_hint}"
-  Add specific scene details (camera angle, subject, action, lighting, colors).
-- subtitle: Short version of the text for on-screen captions (max 12 words per scene).
+- subtitle: Short version of the text for on-screen captions (max 10 words).
 - screen_text: A 1–5 word catchy overlay or key fact shown on screen (empty string if not needed).
 
-Respond ONLY with valid JSON array (no markdown, no extra text):
+Respond ONLY with a valid JSON array (no markdown, no extra text):
 [
   {{
     "text": "The exact words the narrator will speak for this scene.",
-    "image_prompt": "Extremely detailed visual prompt for AI image/video generation...",
-    "subtitle": "Short caption text (max 12 words)",
+    "image_prompt": "Specific visual prompt for AI video generation...",
+    "subtitle": "Short caption text (max 10 words)",
     "screen_text": "KEY FACT" 
   }}
-]
-
-Generate enough scenes to fill the target word count. Each scene should be 30–80 words of narration."""
+]"""
 
     try:
         raw = gemini(prompt)
