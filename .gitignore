@@ -43,6 +43,7 @@ build/
 
 # ── Temp/Scratch Scripts ─────────────────────────
 _*
+legacy_files/
 resolve_conflicts.py
 read_pdf.py
 

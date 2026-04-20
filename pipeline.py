@@ -1,6 +1,5 @@
 """
 ShortsBot Pipeline - Ultimate Edition (Merged)
-=============================================================
 Full Automation Pipeline with Failover System & Deluxe Features
 """
 
@@ -534,35 +533,14 @@ class TelegramNotifier:
 _TG = TelegramNotifier()
 
 
-<<<<<<< HEAD
 # Per-key 429 blacklist — once a key exhausts quota it is skipped for the session
 _gemini_key_exhausted: set = set()
 
-=======
-# Per-key 429/auth blacklist -- once a key exhausts quota it is skipped for the session
-_gemini_key_exhausted: set = set()
-
-# ── Gemini model priority list (from official Gemini 3 Developer Guide) ────────
-# gemini-3-flash-preview      = high-volume free-tier model (Gemini 3 Flash)
-# gemini-3.1-flash-lite-preview = cost-efficiency / high-volume workhorse
-# gemini-2.0-flash              = proven stable fallback (still works)
-# gemini-2.0-flash-lite         = lightest model, maximum quota
-_GEMINI_TEXT_MODELS = [
-    # Gemini 3 series -- separate quota bucket, works even when gemini-2.0 is rate-limited
-    "gemini-3-flash-preview",         # Gemini 3 Flash (high-volume, fast, FREE)
-    "gemini-3.1-flash-lite-preview",  # Gemini 3.1 Flash-Lite (cost-efficiency workhorse, FREE)
-    # Gemini 2.0 series -- fallback when Gemini 3 preview quota is also hit
-    "gemini-2.0-flash",               # Proven stable, wide free quota
-    "gemini-2.0-flash-lite",          # Lightest Gemini 2.0 model
-]
-
->>>>>>> 15f0997 (chore: initial commit of ShortsBot setup)
 def gemini(prompt: str, max_retries: int = 5) -> str:
     """
     Call Gemini API with smart per-key quota tracking + multi-provider fallback.
 
     Fallback priority (auto, no config needed):
-<<<<<<< HEAD
       1. Gemini 2.0 Flash / Flash-Lite  (all AIza keys)
       2. Groq – Llama 3.3 70B           (14,400 req/day FREE)
       3. Cerebras – Llama 3.3 70B       (1,000 req/day FREE, ultra-fast)
@@ -597,44 +575,6 @@ def gemini(prompt: str, max_retries: int = 5) -> str:
         for k in valid_gemini_keys:
             all_configs.append(("gemini", m, k,
                 f"https://generativelanguage.googleapis.com/v1beta/models/{m}:generateContent"))
-=======
-      1. Gemini 2.0 Flash  -> Flash-Lite  (all AIza keys, round-robin per key)
-      2. Groq   -- Llama 3.3 70B           (14,400 req/day FREE)
-      3. Cerebras -- Llama 3.3 70B         (1,000 req/day FREE, ultra-fast)
-      4. OpenRouter -- Llama 3.3 70B       (free tier)
-      5. Together AI -- Llama 3.1 70B      ($25 free credit)
-      6. Mistral -- mistral-small           (free tier)
-
-    Rules:
-      - Bad/expired keys (400/401/403) -> silently blacklisted, never retried.
-      - Rate-limited keys (429)         -> blacklisted this session, next tried immediately.
-      - Network/5xx errors              -> brief progressive wait, then try next provider.
-      - Raises ONLY when ALL providers are exhausted.
-    """
-    # ---- 1. Collect valid Gemini keys ----------------------------------------
-    raw_keys = []
-    k0 = os.getenv("GEMINI_API_KEY", "")
-    if k0:
-        raw_keys.append(k0)
-    for i in range(2, 10):
-        k = os.getenv(f"GEMINI_API_KEY_{i}", "")
-        if k:
-            raw_keys.append(k)
-    valid_gemini_keys = [k for k in raw_keys if k.startswith("AIza")]
-
-    # ---- 2. Build ordered provider config list --------------------------------
-    # Each entry: (provider_name, model_id, api_key, endpoint_or_None)
-    all_configs = []
-
-    # Gemini: iterate keys first, then models -- so ALL keys get tried before fallback models
-    for k in valid_gemini_keys:
-        for m in _GEMINI_TEXT_MODELS:
-            endpoint = (
-                f"https://generativelanguage.googleapis.com/v1beta/models"
-                f"/{m}:generateContent"
-            )
-            all_configs.append(("gemini", m, k, endpoint))
->>>>>>> 15f0997 (chore: initial commit of ShortsBot setup)
 
     # OpenAI-compatible providers (Groq, Cerebras, OpenRouter, Together, Mistral)
     _OAI_PROVIDERS = [
@@ -667,7 +607,6 @@ def gemini(prompt: str, max_retries: int = 5) -> str:
         raise RuntimeError(
             "No AI provider configured.\n"
             "Add at least one of these to .env:\n"
-<<<<<<< HEAD
             "  GEMINI_API_KEY   (https://aistudio.google.com/app/apikey)\n"
             "  GROQ_API_KEY     (https://console.groq.com/keys)\n"
             "  CEREBRAS_API_KEY (https://cloud.cerebras.ai)\n"
@@ -747,129 +686,6 @@ def gemini(prompt: str, max_retries: int = 5) -> str:
             time.sleep(2)
             attempt += 1
             continue
-=======
-            "  GEMINI_API_KEY     (https://aistudio.google.com/app/apikey)\n"
-            "  GROQ_API_KEY       (https://console.groq.com/keys)\n"
-            "  CEREBRAS_API_KEY   (https://cloud.cerebras.ai)\n"
-            "  OPENROUTER_API_KEY (https://openrouter.ai)"
-        )
-
-    # ---- 3. Helper: return only non-blacklisted configs ----------------------
-    def _available():
-        return [(p, m, k, e) for p, m, k, e in all_configs
-                if (p, k) not in _gemini_key_exhausted]
-
-    # ---- 4. Main retry loop --------------------------------------------------
-    network_failures: dict = {}   # (provider, key) -> consecutive server-error count
-    last_err = None
-
-    for _pass in range(max_retries):
-        active = _available()
-        if not active:
-            raise RuntimeError(
-                "All AI providers completely rate limited or exhausted. "
-                "Quota is gone for today.\n"
-                "Fix: Add more GEMINI_API_KEY_N keys in .env "
-                "(free at aistudio.google.com/app/apikey), or wait until midnight PST."
-            )
-
-        for provider, current_model, current_key, endpoint in active:
-            try:
-                if provider == "gemini":
-                    # Use official google-genai SDK -- handles retries + thought signatures natively
-                    try:
-                        from google import genai as _genai
-                        from google.genai import types as _gtypes
-                        _client = _genai.Client(api_key=current_key)
-                        _resp = _client.models.generate_content(
-                            model=current_model,
-                            contents=prompt,
-                            config=_gtypes.GenerateContentConfig(
-                                temperature=1.0,   # Gemini 3 recommended default
-                                max_output_tokens=8192,
-                            )
-                        )
-                        text = _resp.text
-                        if text and text.strip():
-                            return text.strip()
-                        raise ValueError("Gemini SDK returned empty text")
-                    except ImportError:
-                        # SDK not available -- fall back to raw HTTP
-                        resp = http_post_json(
-                            endpoint,
-                            {"contents": [{"parts": [{"text": prompt}]}],
-                             "generationConfig": {"temperature": 1.0, "maxOutputTokens": 8192}},
-                            {"Content-Type": "application/json",
-                             "x-goog-api-key": current_key}
-                        )
-                        candidates = resp.get("candidates", [])
-                        if not candidates:
-                            raise ValueError("Gemini returned no candidates (safety block?)")
-                        parts = candidates[0].get("content", {}).get("parts", [])
-                        if not parts or not parts[0].get("text", "").strip():
-                            raise ValueError("Gemini returned empty content")
-                        return parts[0]["text"].strip()
-
-                else:
-                    # OpenAI-compatible chat completions endpoint
-                    extra_headers = {}
-                    if provider == "openrouter":
-                        extra_headers["HTTP-Referer"] = "https://github.com/ShortsBot"
-                    resp = http_post_json(
-                        endpoint,
-                        {"model": current_model,
-                         "messages": [{"role": "user", "content": prompt}],
-                         "max_tokens": 8192},
-                        {"Content-Type": "application/json",
-                         "Authorization": f"Bearer {current_key}",
-                         **extra_headers}
-                    )
-                    content = (resp.get("choices") or [{}])[0].get("message", {}).get("content", "")
-                    if not content or not content.strip():
-                        raise ValueError(f"{provider} returned empty content")
-                    return content.strip()
-
-            except Exception as e:
-                last_err = e
-
-                # Reliably extract HTTP status code
-                status = getattr(e, "code", None)
-                if status is None:
-                    try:
-                        status = int(str(e).split("HTTP Error ")[1].split(":")[0])
-                    except Exception:
-                        status = 0
-                # google-genai SDK wraps errors differently
-                err_str = str(e).lower()
-                if "429" in err_str or "quota" in err_str or "resource_exhausted" in err_str:
-                    status = 429
-                elif "401" in err_str or "403" in err_str or "api_key_invalid" in err_str:
-                    status = 403
-
-                if status in (400, 401, 403):
-                    _gemini_key_exhausted.add((provider, current_key))
-                    log.debug(f"[AI] {provider} key invalid ({status}) -- blacklisted")
-                    break  # try next provider
-
-                if status == 429:
-                    _gemini_key_exhausted.add((provider, current_key))
-                    label = current_model if provider == "gemini" else provider.capitalize()
-                    print(f"  {C.YELLOW}Rate limit -> switching to {label}{C.RESET}")
-                    time.sleep(1)
-                    break  # try next provider
-
-                # Network / server / unknown error -- progressive wait
-                fkey = (provider, current_key)
-                network_failures[fkey] = network_failures.get(fkey, 0) + 1
-                wait = min(5 * network_failures[fkey], 30)
-                log.debug(f"[AI] {provider} error ({status or type(e).__name__}) -- wait {wait}s")
-                time.sleep(wait)
-                break  # try next provider
-
-        # Brief inter-pass delay if providers still available
-        if _pass < max_retries - 1 and _available():
-            time.sleep(2)
->>>>>>> 15f0997 (chore: initial commit of ShortsBot setup)
 
     if last_err:
         raise last_err
@@ -919,30 +735,10 @@ def ask_resume() -> dict | None:
     print(f"   Channel : {account}")
     print(f"   Source  : {source}")
     print(f"   Saved   : {saved_at}")
-<<<<<<< HEAD
     if yn("Resume from last step?"):
         return cp
     clear_cp()   # user said NO - delete stale checkpoint
     return None
-=======
-    
-    opts = [
-        f"Resume exactly from '{step}' (Retry failed items)",
-        f"Force advance to the NEXT step (Skip '{step}')",
-        "Start fresh (Delete this checkpoint)"
-    ]
-    ans = menu("INCOMPLETE RUN PIPELINE RECOVERY", opts)
-    if ans == 1:
-        return cp
-    elif ans == 2:
-        if step == "downloading": cp["step"] = "processing"
-        elif step == "processing": cp["step"] = "uploading"
-        save_cp(cp)
-        return cp
-    else:
-        clear_cp()   # user said start fresh
-        return None
->>>>>>> 15f0997 (chore: initial commit of ShortsBot setup)
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  INTERNET CHECK
@@ -1774,11 +1570,7 @@ def generate_metadata(video_title: str, transcript: str, idx: int,
                       niche: str, research: dict, mode: str = "shorts",
                       lang: str = "english",
                       original_title: str = "", original_desc: str = "",
-<<<<<<< HEAD
                       title_style: str = "fresh") -> dict:
-=======
-                      title_style: str = "fresh", channel_name: str = "default_channel") -> dict:
->>>>>>> 15f0997 (chore: initial commit of ShortsBot setup)
     """
     Generate AI metadata with language + title style control.
 
@@ -1793,19 +1585,11 @@ def generate_metadata(video_title: str, transcript: str, idx: int,
     tags = get_tags(niche, idx, research.get("trending_tags",[]))
 
     if mode == "shorts":
-<<<<<<< HEAD
         title_rule = "Max 60 chars, curiosity gap, 1-2 emojis, MUST end with #shorts"
         desc_rule  = "Hook + value + CTA + #shorts in hashtags at end"
     else:
         title_rule = "Max 100 chars, compelling, NO #shorts anywhere, for Videos section"
         desc_rule  = "Hook + value + CTA + hashtags at end - NO #shorts tag"
-=======
-        title_rule = "Max 60 chars. Write like a real human YouTuber, NOT AI. Use emojis seamlessly next to words. Inject massive amounts of hashtags that fit the genre. MUST end with #shorts"
-        desc_rule  = "Write organically like a real human. Use 80-90% of max keyword limit. Highly researched, massive info. Hook -> Value/Story -> Call to Action -> Interactive video-specific question. Spread emojis naturally. End with a huge wall of related hashtags, including #shorts."
-    else:
-        title_rule = "Max 100 chars. Enhance original title via advanced human psychology (FOMO, curiosity). Write organically like a real human. Use emojis seamlessly next to words. NO #shorts tag."
-        desc_rule  = "Write organically like a real human YouTuber. Use 80-90% of max keyword limit. Highly researched, massive info. Hook -> Value/Story -> Call to Action -> Interactive video-specific question. Spread emojis naturally. End with a huge wall of related hashtags. NO #shorts tag anywhere."
->>>>>>> 15f0997 (chore: initial commit of ShortsBot setup)
 
     # Language instruction
     if lang == "hindi":
@@ -1866,11 +1650,7 @@ def generate_metadata(video_title: str, transcript: str, idx: int,
           "hook_overlay"   : "3-6 word {'Hindi' if lang=='hindi' else 'English'} hook for first 3 seconds on screen",
           "mood"           : "energetic|happy|inspiring|motivational|upbeat|calm|dramatic",
           "title_alt"      : "Alternate title - different angle, same topic",
-<<<<<<< HEAD
           "comment_prompt" : "Pinnable question in {'Hindi' if lang=='hindi' else 'English'} to drive comments"
-=======
-          "comment_prompt" : "A highly interactive, creative, specific question about this video in {'Hindi' if lang=='hindi' else 'English'} to spark conversation. Must sound organic."
->>>>>>> 15f0997 (chore: initial commit of ShortsBot setup)
         }}
     """).strip()
 
@@ -1878,64 +1658,11 @@ def generate_metadata(video_title: str, transcript: str, idx: int,
         raw  = gemini(prompt).replace("```json","").replace("```","").strip()
         data = json.loads(raw)
         data["tags"] = tags
-<<<<<<< HEAD
-=======
-        
-        # Save to local system pool for organic fail-safe rewriting later
-        try:
-            safe_ch = "".join(c for c in channel_name if c.isalnum() or c in " _-")
-            pool_file = BASE_DIR / f"{safe_ch}_metadata_pool.json"
-            pool = json.loads(pool_file.read_text(encoding="utf-8")) if pool_file.exists() else []
-            pool.append(data)
-            pool = pool[-100:]  # keep last 100
-            pool_file.write_text(json.dumps(pool, indent=2, ensure_ascii=False), encoding="utf-8")
-        except Exception:
-            pass
-            
->>>>>>> 15f0997 (chore: initial commit of ShortsBot setup)
         return data
 
     except Exception as e:
         log.warning(f"[AI] Metadata error: {e}")
 
-<<<<<<< HEAD
-=======
-        # Smart fallback - load from our custom pool and locally rewrite
-        try:
-            safe_ch = "".join(c for c in channel_name if c.isalnum() or c in " _-")
-            pool_file = BASE_DIR / f"{safe_ch}_metadata_pool.json"
-            if pool_file.exists():
-                pool = json.loads(pool_file.read_text(encoding="utf-8"))
-                is_short = (mode == "shorts")
-                valid = [x for x in pool if ("#shorts" in x.get("title","").lower()) == is_short]
-                if valid:
-                    import random
-                    chosen = random.choice(valid)
-                    ft = chosen.get("title", "")
-                    fd = chosen.get("description", "")
-                    
-                    # Locally rewrite to keep it organically fresh
-                    prefixes = ["🔥 Must watch! ", "😱 Wait for it... ", "👀 New: ", "💯 This is crazy: ", "🚨 Alert: "]
-                    fallback_title = random.choice(prefixes) + ft.replace("🔥", "").replace("👀", "").strip()
-                    if mode == "shorts" and "#shorts" not in fallback_title.lower():
-                        fallback_title += " #shorts"
-                        
-                    # Basic local string mutation on description to ensure it differs
-                    fallback_desc = fd.replace("👇", "👇👇").replace("🔥", "🔥🔥").replace("Like & Subscribe", "Make sure to subscribe!").replace("Comment below", "Let me know your thoughts!")
-                    
-                    return {
-                        "title"         : fallback_title[:100],
-                        "description"   : fallback_desc,
-                        "tags"          : tags,
-                        "hook_overlay"  : chosen.get("hook_overlay", niche.title()),
-                        "mood"          : chosen.get("mood", "energetic"),
-                        "title_alt"     : chosen.get("title_alt", fallback_title)[:100],
-                        "comment_prompt": chosen.get("comment_prompt", "Thoughts? 👇👇"),
-                    }
-        except Exception as pool_err:
-            log.warning(f"[AI] Local pool rewrite failed: {pool_err}")
-
->>>>>>> 15f0997 (chore: initial commit of ShortsBot setup)
         # ── Smart fallback - niche-specific, NOT raw filename ─────────────────
         suffix = " #shorts" if mode == "shorts" else ""
         hot    = research.get("hot_topics", [])
@@ -2313,12 +2040,7 @@ def process_shorts(video_path: Path, title_base: str, niche: str,
                    lang: str = "english", caption_lang: str = "en",
                    title_style: str = "fresh",
                    original_title: str = "", original_desc: str = "",
-<<<<<<< HEAD
                    is_viral: bool = False) -> list:
-=======
-                   is_viral: bool = False, channel_name: str = "default_channel",
-                   max_clips: int = 0) -> list:
->>>>>>> 15f0997 (chore: initial commit of ShortsBot setup)
     SHORTS_DIR.mkdir(parents=True,exist_ok=True)
     qt=""
     try:
@@ -2328,11 +2050,6 @@ def process_shorts(video_path: Path, title_base: str, niche: str,
     plan=calculate_plan(video_path,qt,is_viral=is_viral)
     print(f"\n  📊 Shorts Plan: {plan['reason']}  |  Est. completion: {plan['completion']}")
     clips=detect_highlights(video_path,plan["num"],plan["dur"])
-<<<<<<< HEAD
-=======
-    if max_clips > 0:
-        clips = clips[:max_clips]
->>>>>>> 15f0997 (chore: initial commit of ShortsBot setup)
     shorts=[]
     for i,(s,e) in enumerate(clips):
         dur=e-s; base=SHORTS_DIR/f"{title_base}_short_{i+1}"
@@ -2357,12 +2074,7 @@ def process_shorts(video_path: Path, title_base: str, niche: str,
         if i > 0: time.sleep(4)
         meta=generate_metadata(title_base,transcript,i,niche,research,"shorts",
                                lang=lang,original_title=original_title,
-<<<<<<< HEAD
                                original_desc=original_desc,title_style=title_style)
-=======
-                               original_desc=original_desc,title_style=title_style,
-                               channel_name=channel_name)
->>>>>>> 15f0997 (chore: initial commit of ShortsBot setup)
         thumb=generate_thumbnail(f_cap,meta["title"],niche)
         progress_bar(3,4,"Mixing music...")
         track=fetch_music(meta.get("mood","energetic"), niche)
@@ -2393,12 +2105,7 @@ def process_video_clips(video_path: Path, title_base: str, niche: str,
                         trim_start: int = 0, trim_end: int = 0,
                         lang: str = "english", caption_lang: str = "en",
                         title_style: str = "fresh",
-<<<<<<< HEAD
                         original_title: str = "", original_desc: str = "") -> list:
-=======
-                        original_title: str = "", original_desc: str = "", channel_name: str = "default_channel",
-                        max_clips: int = 0) -> list:
->>>>>>> 15f0997 (chore: initial commit of ShortsBot setup)
     VIDEOS_DIR.mkdir(parents=True,exist_ok=True)
 
     if edit_mode == "random":
@@ -2415,12 +2122,6 @@ def process_video_clips(video_path: Path, title_base: str, niche: str,
         encode_original_aspect(video_path, out)
         source_clips = [out]
 
-<<<<<<< HEAD
-=======
-    if max_clips > 0:
-        source_clips = source_clips[:max_clips]
-
->>>>>>> 15f0997 (chore: initial commit of ShortsBot setup)
     results = []
     for i, clip in enumerate(source_clips):
         transcript=""
@@ -2433,12 +2134,7 @@ def process_video_clips(video_path: Path, title_base: str, niche: str,
             except: pass
         meta  = generate_metadata(title_base,transcript,i,niche,research,"video",
                                   lang=lang,original_title=original_title,
-<<<<<<< HEAD
                                   original_desc=original_desc,title_style=title_style)
-=======
-                                  original_desc=original_desc,title_style=title_style,
-                                  channel_name=channel_name)
->>>>>>> 15f0997 (chore: initial commit of ShortsBot setup)
         thumb = generate_thumbnail(clip,meta["title"],niche)
         track = fetch_music(meta.get("mood","energetic"))
         f_fin = VIDEOS_DIR/f"{title_base}_video_{i+1}_final.mp4"
@@ -2578,28 +2274,6 @@ def make_schedule(items: list, niche: str = "general") -> list:
     out           = []
     last_short    = now
     last_video    = now
-<<<<<<< HEAD
-=======
-    
-    try:
-        mnf_path = BASE_DIR / "upload_manifest.json"
-        if mnf_path.exists():
-            import json
-            with mnf_path.open(encoding="utf-8") as f:
-                last_mnf = json.load(f)
-                for it in last_mnf.get("items", []):
-                    sdt_str = it.get("scheduled", "")
-                    if sdt_str:
-                        s_clean = sdt_str.replace(" IST", "")
-                        dt_obj = datetime.strptime(s_clean, "%a %d %b %Y %I:%M %p")
-                        if "short" in str(it.get("type", "")).lower():
-                            if dt_obj > last_short: last_short = dt_obj
-                        else:
-                            if dt_obj > last_video: last_video = dt_obj
-    except Exception:
-        pass
-
->>>>>>> 15f0997 (chore: initial commit of ShortsBot setup)
     uploads_today = {}
 
     for i, item in enumerate(items):
@@ -2829,26 +2503,13 @@ def upload_all(items: list, channel: dict, privacy: str = "public") -> list:
             warn(f"Skipping upload #{i+1}: {item['title'][:50]} (via Telegram /skip)")
             continue
 
-<<<<<<< HEAD
-=======
-        if item.get("uploaded"):
-            print(f"\n  ⏭  Skipping #{i+1}: {item['title'][:50]} (already uploaded: {item.get('id')})")
-            if "cached_res" in item:
-                results.append(item["cached_res"])
-            continue
-
->>>>>>> 15f0997 (chore: initial commit of ShortsBot setup)
         _TG._current_title = item["title"]
         print(f"\n  {kind} {i+1}/{len(items)}: {item['title'][:55]}")
         try:
             vid = upload_one(yt, item, sched[i], i+1, len(items), privacy=privacy)
             url = (f"https://youtube.com/shorts/{vid}" if item.get("mode") == "shorts"
                    else f"https://www.youtube.com/watch?v={vid}")
-<<<<<<< HEAD
             results.append({
-=======
-            res_dict = {
->>>>>>> 15f0997 (chore: initial commit of ShortsBot setup)
                 "n"             : i + 1,
                 "type"          : kind,
                 "title"         : item["title"],
@@ -2856,38 +2517,12 @@ def upload_all(items: list, channel: dict, privacy: str = "public") -> list:
                 "url"           : url,
                 "scheduled"     : sched[i]["ist"],
                 "comment_prompt": item.get("comment_prompt", ""),
-<<<<<<< HEAD
             })
-=======
-            }
-            results.append(res_dict)
-
-            # Update checkpoint so future resume skips this successful upload
-            item["uploaded"] = True
-            item["id"] = vid
-            item["cached_res"] = res_dict
-            
-            cp = load_cp()
-            if cp and "all_items" in cp:
-                for cp_item in cp["all_items"]:
-                    if cp_item["path"] == item["path"]:
-                        cp_item["uploaded"] = True
-                        cp_item["id"] = vid
-                        cp_item["cached_res"] = res_dict
-                save_cp(cp)
-
->>>>>>> 15f0997 (chore: initial commit of ShortsBot setup)
             # ── Telegram: per-upload notification ─────────────────────────────
             _TG.send_upload_notification(item, vid, sched[i]["ist"], i+1, len(items))
             time.sleep(2)
         except Exception as e:
             log.error(f"  ✗ Upload failed: {e}")
-<<<<<<< HEAD
-=======
-            print(f"\n  🚨 Critical error during upload! Pipeline crashed to protect queue.")
-            print(f"     Run the script again to securely resume from this exact point.")
-            raise
->>>>>>> 15f0997 (chore: initial commit of ShortsBot setup)
 
     ok(f"{len(results)}/{len(items)} uploaded")
     _TG.send_session_end(len(results), len(items))
@@ -3198,20 +2833,6 @@ def main_mode_menu(channel: dict) -> dict:
     session["ct_label"]        = ["Shorts","Video Clips","Full Video",
                                    "Shorts+Clips","Shorts+Full"][ct-1]
 
-<<<<<<< HEAD
-=======
-    session["max_shorts"] = 0
-    session["max_vid_clips"] = 0
-    
-    if session["make_shorts"]:
-        ans = get_input("How many Shorts do you want to generate per video? (0 = auto limit)", required=False)
-        session["max_shorts"] = int(ans) if ans and ans.isdigit() else 0
-        
-    if session["make_vid_clips"] or session["make_full_video"]:
-        ans = get_input("How many long Videos do you want to generate per source? (0 = all)", required=False)
-        session["max_vid_clips"] = int(ans) if ans and ans.isdigit() else 0
-
->>>>>>> 15f0997 (chore: initial commit of ShortsBot setup)
     # ── Full video edit mode ─────────────────────────────────────────────────
     session["video_edit"]  = "random"
     session["trim_start"]  = 0
@@ -3488,23 +3109,13 @@ def main():
                 orig_title = session_original_title
                 orig_desc  = session_original_desc
 
-<<<<<<< HEAD
-=======
-            ch_name = channel.get("real_name", channel.get("label", "default_channel"))
-
->>>>>>> 15f0997 (chore: initial commit of ShortsBot setup)
             if make_shorts:
                 shorts = process_shorts(
                     video, title, niche, research, add_captions,
                     lang=lang, caption_lang=caption_lang,
                     title_style=title_style,
                     original_title=orig_title, original_desc=orig_desc,
-<<<<<<< HEAD
                     is_viral=(st=="viral"))
-=======
-                    is_viral=(st=="viral"), channel_name=ch_name,
-                    max_clips=session.get("max_shorts", 0))
->>>>>>> 15f0997 (chore: initial commit of ShortsBot setup)
                 all_items.extend(shorts)
                 print(f"\n  ✅ {len(shorts)} Short(s) queued → Shorts feed")
 
@@ -3513,12 +3124,7 @@ def main():
                     video, title, niche, research, add_captions,
                     "random", lang=lang, caption_lang=caption_lang,
                     title_style=title_style,
-<<<<<<< HEAD
                     original_title=orig_title, original_desc=orig_desc)
-=======
-                    original_title=orig_title, original_desc=orig_desc,
-                    channel_name=ch_name, max_clips=session.get("max_vid_clips", 0))
->>>>>>> 15f0997 (chore: initial commit of ShortsBot setup)
                 all_items.extend(clips)
                 print(f"\n  ✅ {len(clips)} video clip(s) queued → Videos section")
 
@@ -3528,12 +3134,7 @@ def main():
                     video_edit, trim_start, trim_end,
                     lang=lang, caption_lang=caption_lang,
                     title_style=title_style,
-<<<<<<< HEAD
                     original_title=orig_title, original_desc=orig_desc)
-=======
-                    original_title=orig_title, original_desc=orig_desc,
-                    channel_name=ch_name, max_clips=session.get("max_vid_clips", 0))
->>>>>>> 15f0997 (chore: initial commit of ShortsBot setup)
                 all_items.extend(full)
                 print(f"\n  ✅ {len(full)} full video(s) queued → Videos section")
 
