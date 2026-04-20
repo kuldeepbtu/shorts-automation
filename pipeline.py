@@ -624,6 +624,13 @@ def gemini(prompt: str, max_retries: int = 5) -> str:
         # Skip blacklisted keys
         if (provider, current_key) in _gemini_key_exhausted:
             attempt += 1
+            if attempt >= total_attempts and len(_gemini_key_exhausted) >= len(all_configs):
+                print(f"\n  {C.YELLOW}⚡ All API keys hit rate limits! Sleeping 60s to reset Quota...{C.RESET}")
+                import time
+                time.sleep(60)
+                _gemini_key_exhausted.clear()
+                attempt = 0
+                total_attempts = max_retries * len(all_configs)
             continue
 
         try:
@@ -2648,7 +2655,7 @@ def download_viral(channel_url: str, n: int = 5) -> list:
                     "--output", str(RAW_DIR / "%(view_count)s_%(id)s_%(title)s.%(ext)s"),
                     "--no-playlist", "--no-warnings",
                     vid_url
-                ], check=True, capture_output=True)
+                ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=300)
                 downloaded_ids.append(v["id"])
             except Exception as e:
                 log.warning(f"[Viral] Failed to download {v['id']}: {e}")
