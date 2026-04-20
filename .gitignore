@@ -25,6 +25,8 @@ automation.log
 channels_cache.json
 viral_history.json
 settings.json
+Instructions/
+
 
 # ── Downloaded media ───────────────────────────────
 output/
@@ -39,6 +41,13 @@ dist/
 build/
 .json
 
+# ── Temp/Scratch Scripts ─────────────────────────
+_*
+resolve_conflicts.py
+read_pdf.py
+
+# ── Keys ────────────────────────────────────────
+*.pem
 # ── OS ────────────────────────────────────────────
 .DS_Store
 Thumbs.db
