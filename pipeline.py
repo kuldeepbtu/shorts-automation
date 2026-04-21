@@ -635,6 +635,8 @@ def gemini(prompt: str, max_retries: int = 5) -> str:
 
         try:
             if provider == "gemini":
+                import time
+                time.sleep(4)  # Prevent 15 RPM burst limit with sleep before call
                 resp = http_post_json(
                     endpoint,
                     {"contents": [{"parts": [{"text": prompt}]}]},
@@ -668,28 +670,34 @@ def gemini(prompt: str, max_retries: int = 5) -> str:
                     status = 500
 
             if status in (400, 401, 403, 429):
-                _gemini_key_exhausted.add((provider, current_key))
-                
-                # Find the next available non-blacklisted configuration
-                next_available = None
-                for c in all_configs:
-                    if (c[0], c[2]) not in _gemini_key_exhausted:
-                        next_available = (c[0], c[1])
-                        break
-                        
-                if next_available:
-                    np_, nm = next_available
-                    if status == 429:
-                        label = nm if np_ == "gemini" else np_.capitalize()
-                        print(f"  {C.YELLOW}⚡ Rate limit → switching to {label}{C.RESET}")
-                        time.sleep(1)
+                if status == 429:
+                    print(f"  {C.YELLOW}⚡ Rate limit hit (429) on {provider}. Sleeping 30s before retry...{C.RESET}")
+                    import time
+                    time.sleep(30)
+                    attempt += 1
+                    continue
                 else:
-                    raise RuntimeError("All AI providers completely rate limited or exhausted. Quota is gone for today.")
-                        
-                attempt += 1
-                continue
+                    _gemini_key_exhausted.add((provider, current_key))
+                    
+                    # Find the next available non-blacklisted configuration
+                    next_available = None
+                    for c in all_configs:
+                        if (c[0], c[2]) not in _gemini_key_exhausted:
+                            next_available = (c[0], c[1])
+                            break
+                            
+                    if next_available:
+                        np_, nm = next_available
+                        label = nm if np_ == "gemini" else np_.capitalize()
+                        print(f"  {C.YELLOW}⚡ Key invalid/exhausted → switching to {label}{C.RESET}")
+                    else:
+                        raise RuntimeError("All AI providers completely rate limited or exhausted. Quota is gone for today.")
+                            
+                    attempt += 1
+                    continue
 
             # 5xx / network error — brief pause, retry same key
+            import time
             time.sleep(2)
             attempt += 1
             continue

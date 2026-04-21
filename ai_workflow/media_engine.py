@@ -69,9 +69,9 @@ def _available_keys() -> list:
 
 
 def _mark_rate_limited(key: str):
-    with _key_pool_lock:
-        _rate_limited.add(key)
-    log.warning(f"[KeyPool] …{key[-8:]} rate-limited → skipping for this session")
+    log.warning(f"[KeyPool] …{key[-8:]} rate-limited. Sleeping 60s to recover.")
+    import time
+    time.sleep(60)
 
 
 def _mark_invalid(key: str):
@@ -275,6 +275,7 @@ def _image_nanobanana(prompt: str, w: int, h: int, output_path: Path, api_key: s
             status = _http_status(e)
             if status == 429:
                 _mark_rate_limited(api_key)
+                return _image_nanobanana(prompt, w, h, output_path, api_key) # Retry once after sleep
             elif status in (400, 401, 403):
                 _mark_invalid(api_key)
             log.debug(f"[NanoBanana2 SDK] ({status}): {e}")
@@ -303,6 +304,9 @@ def _image_nanobanana(prompt: str, w: int, h: int, output_path: Path, api_key: s
         status = _http_status(e)
         if status == 429:
             _mark_rate_limited(api_key)
+            # Retry handled generally by the caller or outer try/except, but we can do one naive retry here
+            import time
+            time.sleep(10)
         log.debug(f"[NanoBanana2 REST] ({status}): {e}")
 
     return False
@@ -576,8 +580,11 @@ def _generate_veo(
                     status = _http_status(model_err)
                     if status == 429:
                         _mark_rate_limited(api_key)
-                        print(f" ❌ 429 rate-limited")
-                        return False
+                        print(f" ❌ 429 rate-limited. Retrying same model...")
+                        # We don't return False here, so it will continue and fail, but let's retry
+                        import time
+                        time.sleep(30)
+                        continue # Attempt next model (or same if we could, but next is fine)
                     if status in (400, 404):
                         print(f" ❌ {status} model unavailable, trying next")
                         continue
@@ -635,7 +642,7 @@ def _veo_rest(img_b64: str, prompt: str, aspect: str, duration: int,
             status = _http_status(e)
             if status == 429:
                 _mark_rate_limited(api_key)
-                return False
+                continue # Try next model or retry after sleep
             log.debug(f"[Veo REST] {model} {status}: {e}")
 
     return False
