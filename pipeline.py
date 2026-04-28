@@ -2431,28 +2431,26 @@ def fetch_trending_audio(niche: str = "general", n: int = 8) -> list:
 def fetch_music(mood: str = "energetic", niche: str = "general",
                 use_trending: bool = True) -> Path | None:
     """
-    Get mood-matched, niche-specific track.
-    Priority:
-    0. Trending YouTube Shorts audio (cached, refreshed every 6h) - if available
-    1. Jamendo API (live, mood-tagged) - if key set
-    2. Niche subfolder: assets/music/<niche>/ - best match
-    3. Mood subfolder: assets/music/moods/mood_<mood>*.mp3
-    4. General folder: assets/music/general/
-    5. Any .mp3 anywhere in assets/music/
-    """
-    # 0. Trending YouTube Shorts audio (highest priority)
-    if use_trending:
-        trending_dir = TRENDING_AUDIO_DIR / niche.lower()
-        trending_files = sorted(
-            trending_dir.glob("*.mp3"),
-            key=lambda p: p.stat().st_mtime, reverse=True
-        ) if trending_dir.exists() else []
-        if trending_files:
-            pick = random.choice(trending_files[:min(len(trending_files), 5)])
-            log.info(f"[Music] ♪ Using trending audio: {pick.name[:50]}")
-            return pick
+    Get a niche-specific track for Shorts.
 
-    # 1. Jamendo live fetch
+    Priority:
+    1. Trending YouTube Shorts audio for this niche (ALWAYS preferred — fetches if cache is empty)
+    2. Local fallback (Jamendo / niche folder / mood folder / general) — ONLY if trending fetch fails
+    """
+    # ── 1. Trending YouTube Shorts audio (always first) ───────────────────────
+    if use_trending:
+        # This call handles caching — it only re-downloads when the 6-hour TTL expires
+        trending_files = fetch_trending_audio(niche, n=8)
+        if trending_files:
+            # Randomise among the 5 freshest tracks to add variety each short
+            pool = trending_files[:min(len(trending_files), 5)]
+            pick = random.choice(pool)
+            log.info(f"[Music] ♪ Trending audio: {pick.name[:60]}")
+            return pick
+        log.warning(f"[Music] Trending audio unavailable for '{niche}' — using local library")
+
+    # ── 2. Local fallback (used only if trending download completely failed) ───
+    # Jamendo API
     jid = os.getenv("JAMENDO_CLIENT_ID", "")
     if jid:
         dest = MUSIC_DIR / f"jamendo_{niche}_{mood}.mp3"
@@ -2463,8 +2461,7 @@ def fetch_music(mood: str = "energetic", niche: str = "general",
                     "client_id": jid, "format": "json", "limit": "5",
                     "tags": tags, "audioformat": "mp32"
                 })
-                data   = json.loads(http_get(
-                    f"https://api.jamendo.com/v3.0/tracks/?{params}"))
+                data    = json.loads(http_get(f"https://api.jamendo.com/v3.0/tracks/?{params}"))
                 results = data.get("results", [])
                 if results:
                     url = random.choice(results[:3]).get("audio", "")
@@ -2476,31 +2473,20 @@ def fetch_music(mood: str = "energetic", niche: str = "general",
         elif dest.exists():
             return dest
 
-    # 2. Niche-specific folder
-    niche_dir = MUSIC_DIR / niche.lower()
-    if niche_dir.exists():
-        niche_files = list(niche_dir.glob("*.mp3"))
-        if niche_files:
-            return random.choice(niche_files)
+    # Local folders
+    for folder, pattern in [
+        (MUSIC_DIR / niche.lower(),  "*.mp3"),
+        (MUSIC_DIR / "moods",        f"mood_{mood}*.mp3"),
+        (MUSIC_DIR / "general",      "*.mp3"),
+        (MUSIC_DIR,                  "*.mp3"),
+    ]:
+        if folder.exists():
+            files = list(folder.glob(pattern))
+            if files:
+                log.info(f"[Music] Local fallback: {folder.name}")
+                return random.choice(files)
 
-    # 3. Mood subfolder
-    mood_dir   = MUSIC_DIR / "moods"
-    mood_files = list(mood_dir.glob(f"mood_{mood}*.mp3")) if mood_dir.exists() else []
-    if mood_files:
-        return random.choice(mood_files)
-
-    # 4. General folder
-    general_dir   = MUSIC_DIR / "general"
-    general_files = list(general_dir.glob("*.mp3")) if general_dir.exists() else []
-    if general_files:
-        return random.choice(general_files)
-
-    # 5. Flat fallback (old structure)
-    flat = list(MUSIC_DIR.glob("*.mp3"))
-    if flat:
-        return random.choice(flat)
-
-    # 6. Recursive search
+    # Deep recursive last resort
     all_mp3 = list(MUSIC_DIR.rglob("*.mp3"))
     return random.choice(all_mp3) if all_mp3 else None
 
