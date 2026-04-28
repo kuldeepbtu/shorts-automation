@@ -533,178 +533,312 @@ class TelegramNotifier:
 _TG = TelegramNotifier()
 
 
-# Per-key 429 blacklist — once a key exhausts quota it is skipped for the session
-_gemini_key_exhausted: set = set()
+# ══════════════════════════════════════════════════════════════════════════════
+#  GEMINI 4-KEY ENGINE
+#  ─────────────────────────────────────────────────────────────────────────────
+#  Strategy
+#  ────────
+#  • Round-robin across up to 4 Gemini keys: task 1→key1, task 2→key2 …
+#    so each key handles ~1/4 of all requests and never exceeds its personal RPM.
+#  • Per-key model cascade: for a given key try best→good→lite before giving up.
+#    Best Gemini models in descending quality order:
+#      1. gemini-2.5-pro          (highest quality, lower RPM)
+#      2. gemini-2.5-flash        (great quality, higher RPM)
+#      3. gemini-2.5-flash-lite   (fastest, highest quota)
+#      4. gemini-2.0-flash        (legacy fallback)
+#  • Startup health-check: every key is validated once before the pipeline
+#    begins. Bad / blocked keys are marked and skipped automatically.
+#  • 429 on a model → immediately try next model on the same key (no sleep).
+#    429 on all models of a key → cool that key 90 s, move to next key.
+#  • Non-Gemini fallback chain (Groq → OpenRouter → …) kicks in only when
+#    ALL Gemini keys are in cooldown.
+# ══════════════════════════════════════════════════════════════════════════════
 
-def gemini(prompt: str, max_retries: int = 5) -> str:
+import threading as _threading
+
+# ── Rate limiter (per-key, thread-safe) ───────────────────────────────────────
+_GEMINI_MIN_GAP    = 5.0          # ≤ 12 RPM per key (free tier limit = 15 RPM)
+_key_last_call: dict = {}         # api_key → epoch of last call
+_rate_lock        = _threading.Lock()
+
+def _gemini_rate_limit(key: str = ""):
+    """Enforce minimum gap between calls *per key* (thread-safe).
+    key defaults to "" so any legacy call-site without the argument
+    still gets rate-limited (shared bucket) instead of crashing."""
+    if not key:
+        key = "__default__"
+    with _rate_lock:
+        last = _key_last_call.get(key, 0.0)
+        wait = _GEMINI_MIN_GAP - (time.time() - last)
+        if wait > 0:
+            time.sleep(wait)
+        _key_last_call[key] = time.time()
+
+# ── Cooldown tracker ──────────────────────────────────────────────────────────
+_key_cooldown: dict  = {}         # (provider, api_key) → epoch when usable again
+_KEY_COOLDOWN_429   = 90          # seconds: 429 rate-limit cooldown
+_KEY_COOLDOWN_4XX   = 86400       # seconds: invalid key (blacklisted for session)
+
+def _key_ready(provider: str, key: str) -> bool:
+    return time.time() >= _key_cooldown.get((provider, key), 0.0)
+
+def _cool_key(provider: str, key: str, seconds: int, reason: str):
+    _key_cooldown[(provider, key)] = time.time() + seconds
+    log.warning(f"[AI] ❄  {provider} …{key[-6:]} cooled {seconds}s ({reason})")
+
+# ── Round-robin counter ───────────────────────────────────────────────────────
+_rr_counter = 0
+_rr_lock    = _threading.Lock()
+
+def _next_key_index(n: int) -> int:
+    """Atomically increment and return the next round-robin index."""
+    global _rr_counter
+    with _rr_lock:
+        idx = _rr_counter % n
+        _rr_counter += 1
+        return idx
+
+# ── Best Gemini models (descending quality) ───────────────────────────────────
+GEMINI_MODELS = [
+    "gemini-2.5-pro",            # best quality
+    "gemini-2.5-flash",          # great balance
+    "gemini-2.5-flash-lite",     # fastest / highest quota
+    "gemini-2.0-flash",          # legacy fallback
+]
+
+def _gemini_endpoint(model: str) -> str:
+    return (f"https://generativelanguage.googleapis.com"
+            f"/v1beta/models/{model}:generateContent")
+
+
+# ── Startup key validator ─────────────────────────────────────────────────────
+_keys_validated = False   # run once per process
+
+def _validate_gemini_keys(keys: list) -> list:
     """
-    Call Gemini API with smart per-key quota tracking + multi-provider fallback.
-
-    Fallback priority (auto, no config needed):
-      1. Gemini 2.0 Flash / Flash-Lite  (all AIza keys)
-      2. Groq – Llama 3.3 70B           (14,400 req/day FREE)
-      3. Cerebras – Llama 3.3 70B       (1,000 req/day FREE, ultra-fast)
-      4. OpenRouter – Llama 3.3 70B     (free tier, best quality)
-      5. Together AI – Llama 3.1 70B    ($25 free credit)
-      6. Mistral – mistral-small         (free tier)
-
-    Rules:
-      - Invalid keys (400/401/403) → silently blacklisted, never retried.
-      - Rate-limited keys (429)   → blacklisted for the session, next key tried immediately.
-      - Only waits when EVERY provider is exhausted simultaneously.
+    Fire a tiny test prompt at each key using the best model.
+    Returns only the keys that respond with 200 OK.
+    Prints a clear ✅/❌ status table at startup.
     """
-    # ── 1. Collect valid Gemini keys (must start with 'AIza') ─────────────────
-    raw_keys = []
+    global _keys_validated
+    if _keys_validated or not keys:
+        return keys
+    _keys_validated = True
+
+    print(f"\n{C.CYAN}{'─'*60}{C.RESET}")
+    print(f"  {C.BOLD}{C.WHITE}🔍  Validating {len(keys)} Gemini API key(s)...{C.RESET}")
+    print(f"{C.CYAN}{'─'*60}{C.RESET}")
+
+    test_model    = "gemini-2.5-flash-lite"   # cheapest model for health-check
+    test_endpoint = _gemini_endpoint(test_model)
+    test_prompt   = "Reply with the single word: OK"
+    good_keys     = []
+
+    for i, key in enumerate(keys, 1):
+        label = f"Key {i} (…{key[-8:]})"
+        try:
+            resp = http_post_json(
+                test_endpoint,
+                {"contents": [{"parts": [{"text": test_prompt}]}]},
+                {"Content-Type": "application/json", "x-goog-api-key": key},
+            )
+            _ = resp["candidates"][0]["content"]["parts"][0]["text"]
+            print(f"  {C.GREEN}✅  {label} — working{C.RESET}")
+            good_keys.append(key)
+            time.sleep(2)   # small pause between validation calls
+        except Exception as e:
+            status = 0
+            try: status = int(str(e).split("HTTP Error ")[1].split(":")[0])
+            except Exception: pass
+            if status == 429:
+                print(f"  {C.YELLOW}⚠️   {label} — rate-limited (429) but valid, will use{C.RESET}")
+                good_keys.append(key)          # still add — it will recover
+            elif status in (400, 401, 403):
+                print(f"  {C.RED}❌  {label} — invalid/forbidden ({status}), skipping{C.RESET}")
+                _cool_key("gemini", key, _KEY_COOLDOWN_4XX, f"startup {status}")
+            else:
+                print(f"  {C.YELLOW}⚠️   {label} — network error ({status}), will retry later{C.RESET}")
+                good_keys.append(key)
+
+    if not good_keys:
+        print(f"  {C.RED}⚠️  No valid Gemini keys found! Falling back to other providers.{C.RESET}")
+    else:
+        print(f"\n  {C.GREEN}✅  {len(good_keys)}/{len(keys)} key(s) ready for use.{C.RESET}")
+    print(f"{C.CYAN}{'─'*60}{C.RESET}\n")
+    return good_keys
+
+
+def gemini(prompt: str, max_retries: int = 6) -> str:
+    """
+    Call the best available AI with round-robin Gemini key rotation.
+
+    Flow for each call
+    ──────────────────
+    1. Pick the starting Gemini key via round-robin (key_index % num_keys).
+    2. For that key, try each model in GEMINI_MODELS order:
+         → 200 OK  → return immediately ✅
+         → 429     → try next model on the same key (no wait)
+         → 400/403 → blacklist key, break inner loop, move to next key
+    3. If all models on a key fail with 429 → cool that key 90 s, next key.
+    4. After all Gemini keys exhausted → try non-Gemini providers (Groq, …).
+    5. If everything is in cooldown → wait for the soonest key, then retry.
+    """
+
+    # ── Collect & validate Gemini keys ──────────────────────────────────────
+    raw: list[str] = []
     k0 = os.getenv("GEMINI_API_KEY", "")
-    if k0: raw_keys.append(k0)
+    if k0: raw.append(k0)
     for i in range(2, 10):
         k = os.getenv(f"GEMINI_API_KEY_{i}", "")
-        if k: raw_keys.append(k)
-    valid_gemini_keys = [k for k in raw_keys if k.startswith("AIza")]
+        if k: raw.append(k)
+    all_gemini_keys = [k for k in raw if k.startswith("AIza")]
+    all_gemini_keys = _validate_gemini_keys(all_gemini_keys)  # health-check once
 
-    gemini_models = ["gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-flash-latest"]
-    waits         = [15, 30, 60, 90, 120]
-    last_err      = None
-
-    # ── 2. Build ordered config list ─────────────────────────────────────────
-    # Each entry: (provider_name, model_id, api_key, endpoint)
-    all_configs = []
-
-    # Gemini
-    for m in gemini_models:
-        for k in valid_gemini_keys:
-            all_configs.append(("gemini", m, k,
-                f"https://generativelanguage.googleapis.com/v1beta/models/{m}:generateContent"))
-
-    # OpenAI-compatible providers (Groq, Cerebras, OpenRouter, Together, Mistral)
-    _OAI_PROVIDERS = [
-        ("groq",
-         "llama-3.3-70b-versatile",
-         os.getenv("GROQ_API_KEY", ""),
-         "https://api.groq.com/openai/v1/chat/completions"),
-        ("cerebras",
-         "llama-3.3-70b",
-         os.getenv("CEREBRAS_API_KEY", ""),
-         "https://api.cerebras.ai/v1/chat/completions"),
-        ("openrouter",
-         "meta-llama/llama-3.3-70b-instruct:free",
-         os.getenv("OPENROUTER_API_KEY", ""),
-         "https://openrouter.ai/api/v1/chat/completions"),
-        ("together",
-         "meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo",
-         os.getenv("TOGETHER_API_KEY", ""),
-         "https://api.together.xyz/v1/chat/completions"),
-        ("mistral",
-         "mistral-small-latest",
-         os.getenv("MISTRAL_API_KEY", ""),
-         "https://api.mistral.ai/v1/chat/completions"),
+    # ── Non-Gemini fallback providers ────────────────────────────────────────
+    OAI_PROVIDERS = [
+        ("groq",       "llama-3.3-70b-versatile",
+         os.getenv("GROQ_API_KEY",       ""), "https://api.groq.com/openai/v1/chat/completions"),
+        ("cerebras",   "llama-3.3-70b",
+         os.getenv("CEREBRAS_API_KEY",   ""), "https://api.cerebras.ai/v1/chat/completions"),
+        ("openrouter", "meta-llama/llama-3.3-70b-instruct:free",
+         os.getenv("OPENROUTER_API_KEY", ""), "https://openrouter.ai/api/v1/chat/completions"),
+        ("together",   "meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo",
+         os.getenv("TOGETHER_API_KEY",   ""), "https://api.together.xyz/v1/chat/completions"),
+        ("mistral",    "mistral-small-latest",
+         os.getenv("MISTRAL_API_KEY",    ""), "https://api.mistral.ai/v1/chat/completions"),
     ]
-    for prov, model, key, endpoint in _OAI_PROVIDERS:
-        if key:
-            all_configs.append((prov, model, key, endpoint))
+    oai_configs = [(p, m, k, e) for p, m, k, e in OAI_PROVIDERS if k.strip()]
 
-    if not all_configs:
+    if not all_gemini_keys and not oai_configs:
         raise RuntimeError(
             "No AI provider configured.\n"
-            "Add at least one of these to .env:\n"
-            "  GEMINI_API_KEY   (https://aistudio.google.com/app/apikey)\n"
-            "  GROQ_API_KEY     (https://console.groq.com/keys)\n"
-            "  CEREBRAS_API_KEY (https://cloud.cerebras.ai)\n"
-            "  OPENROUTER_API_KEY (https://openrouter.ai)"
+            "Add to .env:\n"
+            "  GEMINI_API_KEY   → https://aistudio.google.com/app/apikey\n"
+            "  GROQ_API_KEY     → https://console.groq.com/keys\n"
         )
 
-    total_attempts = max_retries * len(all_configs)
-    cycle_logged   = set()
+    last_err   = None
 
-    attempt = 0
-    while attempt < total_attempts:
-        config_idx = attempt % len(all_configs)
-        provider, current_model, current_key, endpoint = all_configs[config_idx]
+    for attempt in range(max_retries):
 
-        # Skip blacklisted keys
-        if (provider, current_key) in _gemini_key_exhausted:
-            attempt += 1
-            if attempt >= total_attempts and len(_gemini_key_exhausted) >= len(all_configs):
-                print(f"\n  {C.YELLOW}⚡ All API keys hit rate limits! Sleeping 60s to reset Quota...{C.RESET}")
-                import time
-                time.sleep(60)
-                _gemini_key_exhausted.clear()
-                attempt = 0
-                total_attempts = max_retries * len(all_configs)
-            continue
+        # ── PHASE 1: Try Gemini keys in round-robin order ─────────────────
+        if all_gemini_keys:
+            n          = len(all_gemini_keys)
+            start_idx  = _next_key_index(n)   # round-robin starting point
 
-        try:
-            if provider == "gemini":
-                import time
-                time.sleep(4)  # Prevent 15 RPM burst limit with sleep before call
+            for ki in range(n):
+                key = all_gemini_keys[(start_idx + ki) % n]
+
+                # Skip keys in cooldown
+                if not _key_ready("gemini", key):
+                    remain = int(_key_cooldown[("gemini", key)] - time.time())
+                    log.debug(f"[AI] ⏳ Key …{key[-6:]} cooling ({remain}s left)")
+                    continue
+
+                key_label = f"Key {all_gemini_keys.index(key)+1} (…{key[-6:]})"
+
+                # ── Model cascade: try best → lite on the same key ─────────
+                for model in GEMINI_MODELS:
+                    # Apply per-key rate limit
+                    _gemini_rate_limit(key)
+                    log.info(f"[AI] 🔑 {key_label} → {model}")
+                    try:
+                        resp = http_post_json(
+                            _gemini_endpoint(model),
+                            {"contents": [{"parts": [{"text": prompt}]}]},
+                            {"Content-Type": "application/json", "x-goog-api-key": key},
+                        )
+                        text = resp["candidates"][0]["content"]["parts"][0]["text"].strip()
+                        log.info(f"[AI] ✅ {model} via {key_label} ({len(text)} chars)")
+                        return text
+
+                    except TypeError as e:
+                        # A TypeError means a programming error (wrong call signature),
+                        # not a network error — re-raise immediately so it is visible.
+                        log.error(f"[AI] 💥 TypeError in Gemini call (check function signatures): {e}")
+                        raise
+                    except Exception as e:
+                        last_err = e
+                        status   = getattr(e, "code", None) or 0
+                        if not status:
+                            try: status = int(str(e).split("HTTP Error ")[1].split(":")[0])
+                            except Exception: status = 500
+
+                        if status == 429:
+                            print(f"  {C.YELLOW}⚡ 429 on {model} / {key_label}"
+                                  f" → trying next model{C.RESET}")
+                            # continue inner loop (try next model on same key)
+                            continue
+
+                        elif status in (400, 401, 403):
+                            print(f"  {C.RED}🚫 {status} on {key_label} → blacklisted{C.RESET}")
+                            _cool_key("gemini", key, _KEY_COOLDOWN_4XX, f"{status}")
+                            break  # stop trying models on this key
+
+                        else:
+                            log.warning(f"[AI] ⚠ {status} on {model}/{key_label}: {e}")
+                            time.sleep(1)
+                            continue   # try next model
+
+                    # end model loop
+                else:
+                    # All models on this key returned 429 → cool the key
+                    print(f"  {C.YELLOW}⚡ All models rate-limited on {key_label}"
+                          f" → cooling {_KEY_COOLDOWN_429}s{C.RESET}")
+                    _cool_key("gemini", key, _KEY_COOLDOWN_429, "all-model 429")
+
+        # ── PHASE 2: Fallback to non-Gemini providers ─────────────────────
+        for prov, model, key, endpoint in oai_configs:
+            if not _key_ready(prov, key):
+                continue
+            extra = {"HTTP-Referer": "https://github.com/ShortsBot"} \
+                    if prov == "openrouter" else {}
+            log.info(f"[AI] 🔁 Fallback → {prov} ({model})")
+            try:
                 resp = http_post_json(
                     endpoint,
-                    {"contents": [{"parts": [{"text": prompt}]}]},
-                    {"Content-Type": "application/json", "x-goog-api-key": current_key}
-                )
-                return resp["candidates"][0]["content"]["parts"][0]["text"].strip()
-
-            else:
-                # All other providers use OpenAI-compatible chat completions
-                extra_headers = {}
-                if provider == "openrouter":
-                    extra_headers["HTTP-Referer"] = "https://github.com/ShortsBot"
-                resp = http_post_json(
-                    endpoint,
-                    {"model": current_model,
+                    {"model": model,
                      "messages": [{"role": "user", "content": prompt}],
                      "max_tokens": 8192},
                     {"Content-Type": "application/json",
-                     "Authorization": f"Bearer {current_key}",
-                     **extra_headers}
+                     "Authorization": f"Bearer {key}",
+                     **extra},
                 )
-                return resp["choices"][0]["message"]["content"].strip()
-
-        except Exception as e:
-            last_err = e
-            status   = getattr(e, "code", None)
-            if status is None:
-                try:
-                    status = int(str(e).split("HTTP Error ")[1].split(":")[0])
-                except Exception:
-                    status = 500
-
-            if status in (400, 401, 403, 429):
+                text = resp["choices"][0]["message"]["content"].strip()
+                log.info(f"[AI] ✅ {prov} responded ({len(text)} chars)")
+                return text
+            except Exception as e:
+                last_err = e
+                status   = getattr(e, "code", None) or 0
+                try: status = int(str(e).split("HTTP Error ")[1].split(":")[0])
+                except Exception: pass
                 if status == 429:
-                    print(f"  {C.YELLOW}⚡ Rate limit hit (429) on {provider}. Sleeping 30s before retry...{C.RESET}")
-                    import time
-                    time.sleep(30)
-                    attempt += 1
-                    continue
+                    _cool_key(prov, key, _KEY_COOLDOWN_429, "429")
+                elif status in (400, 401, 403):
+                    _cool_key(prov, key, _KEY_COOLDOWN_4XX, f"{status}")
                 else:
-                    _gemini_key_exhausted.add((provider, current_key))
-                    
-                    # Find the next available non-blacklisted configuration
-                    next_available = None
-                    for c in all_configs:
-                        if (c[0], c[2]) not in _gemini_key_exhausted:
-                            next_available = (c[0], c[1])
-                            break
-                            
-                    if next_available:
-                        np_, nm = next_available
-                        label = nm if np_ == "gemini" else np_.capitalize()
-                        print(f"  {C.YELLOW}⚡ Key invalid/exhausted → switching to {label}{C.RESET}")
-                    else:
-                        raise RuntimeError("All AI providers completely rate limited or exhausted. Quota is gone for today.")
-                            
-                    attempt += 1
-                    continue
+                    time.sleep(2)
+                continue
 
-            # 5xx / network error — brief pause, retry same key
-            import time
-            time.sleep(2)
-            attempt += 1
-            continue
+        # ── PHASE 3: Everything cooling — wait for soonest recovery ───────
+        all_pairs = ([("gemini", k) for k in all_gemini_keys]
+                     + [(p, k) for p, _, k, _ in oai_configs])
+        cooling   = [(p, k) for p, k in all_pairs if not _key_ready(p, k)]
+        if len(cooling) == len(all_pairs) and all_pairs:
+            soonest = min(_key_cooldown.get((p, k), 0) for p, k in cooling)
+            wait_s  = max(1, int(soonest - time.time()))
+            print(f"\n  {C.YELLOW}⏳ All providers cooling — waiting {wait_s}s "
+                  f"for earliest key to recover...{C.RESET}")
+            time.sleep(wait_s)
+        else:
+            time.sleep(3)  # brief pause between retry passes
 
     if last_err:
         raise last_err
-    raise RuntimeError("gemini(): exhausted all retries with no successful response")
+    raise RuntimeError("gemini(): exhausted all retries across all providers")
+
+
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  CHECKPOINT
@@ -1578,6 +1712,131 @@ def research_niche(niche: str) -> dict:
     return result
 
 # ══════════════════════════════════════════════════════════════════════════════
+#  AI METADATA HELPERS
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _build_hashtag_block(tags: list, niche: str, research: dict,
+                         for_shorts: bool = False) -> str:
+    """
+    Build a dense SEO hashtag block.
+    For videos  : as many hashtags as fit within the remaining description budget.
+    For shorts  : compact block that keeps total description under ~600 chars.
+    """
+    # Start with the supplied tag list
+    base = list(tags)
+
+    # Add trending tags from research
+    for t in research.get("trending_tags", []):
+        if t not in base:
+            base.append(t)
+
+    # Add all niche pool tags
+    for t in NICHE_TAGS.get(niche.lower(), NICHE_TAGS["general"]):
+        if t not in base:
+            base.append(t)
+
+    # Universal high-traffic tags
+    universal = [
+        "viral", "trending", "youtube", "subscribe", "like", "comment",
+        "share", "video", "content", "creator", "india", "fyp", "foryou",
+        "explore", "reels", "instagram", "tiktok", "new", "today", "watch",
+        "entertainment", "fun", "amazing", "awesome", "insane", "mustsee",
+    ]
+    for t in universal:
+        if t not in base:
+            base.append(t)
+
+    limit = 25 if for_shorts else 500   # hashtag count limit
+    hashtags = [f"#{t.strip().replace(' ', '').replace('#', '')}" for t in base[:limit]]
+    return " ".join(dict.fromkeys(hashtags))   # deduplicate, preserve order
+
+
+def _build_video_description(title: str, base_desc: str, niche: str,
+                              tags: list, original_title: str,
+                              lang: str, research: dict) -> str:
+    """
+    For VIDEO uploads:
+      1. Generate a ~1000-word SEO article about the video topic via Gemini.
+      2. Append the base_desc hook / CTA.
+      3. Append a large hashtag block.
+    Total kept within YouTube's 5000-char description limit.
+    """
+    topic = original_title or title or niche.title()
+    hot   = " | ".join(research.get("hot_topics", [])[:4])
+
+    if lang == "hindi":
+        article_prompt = textwrap.dedent(f"""
+            आप एक YouTube SEO विशेषज्ञ हैं।
+            नीचे दिए गए वीडियो के बारे में एक 1000-शब्द का SEO-अनुकूलित लेख हिंदी में लिखें।
+            वीडियो का शीर्षक: {topic}
+            Niche: {niche}
+            संबंधित विषय: {hot or niche}
+
+            नियम:
+            - प्राकृतिक हिंदी में लिखें (Devanagari)।
+            - वीडियो से जुड़े तथ्य, फ़ायदे, और जानकारी शामिल करें।
+            - viewer को अंत तक देखने के लिए प्रेरित करें।
+            - केवल लेख का text return करें, कोई JSON नहीं।
+        """).strip()
+    else:
+        article_prompt = textwrap.dedent(f"""
+            You are a YouTube SEO expert.
+            Write a 1000-word, SEO-optimised article in English about the following video.
+            Video title : {topic}
+            Niche       : {niche}
+            Related topics: {hot or niche}
+
+            Rules:
+            - Use natural, engaging language a YouTube viewer would enjoy reading.
+            - Include relevant facts, benefits, and insights related to the topic.
+            - Motivate the reader to watch the video to the end.
+            - Return ONLY the article text, no JSON, no markdown headers.
+        """).strip()
+
+    article = ""
+    try:
+        article = gemini(article_prompt).strip()
+        log.info(f"[Desc] Article generated ({len(article)} chars)")
+    except Exception as e:
+        log.warning(f"[Desc] Article generation failed: {e}")
+        article = base_desc   # fall back to the short hook desc
+
+    # Build hashtag block – as many as fit
+    hashtag_block = _build_hashtag_block(tags, niche, research, for_shorts=False)
+
+    # Assemble: article → blank line → base CTA → blank line → hashtags
+    cta = base_desc.strip() if base_desc.strip() else ""
+    parts = [article]
+    if cta:
+        parts.append(cta)
+    parts.append(hashtag_block)
+
+    full = "\n\n".join(p for p in parts if p)
+    # Respect YouTube's 5000-char hard limit
+    if len(full) > 4990:
+        # Trim article first, keep CTA + hashtags intact
+        overhead    = len(cta) + len(hashtag_block) + 6   # 6 for \n\n separators
+        article_cap = 4990 - overhead
+        article     = article[:max(0, article_cap)]
+        parts       = [article]
+        if cta:
+            parts.append(cta)
+        parts.append(hashtag_block)
+        full = "\n\n".join(p for p in parts if p)
+    return full[:5000]
+
+
+def _build_shorts_description(tags: list, niche: str, research: dict) -> str:
+    """
+    For SHORTS uploads: description = hashtags ONLY, ≤ 600 chars (~100 words).
+    No article text, no CTA sentences.
+    """
+    block = _build_hashtag_block(tags, niche, research, for_shorts=True)
+    # Hard-cap at 600 chars to stay well under the ~100-word guideline
+    return block[:600]
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 #  AI METADATA
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -1673,6 +1932,22 @@ def generate_metadata(video_title: str, transcript: str, idx: int,
         raw  = gemini(prompt).replace("```json","").replace("```","").strip()
         data = json.loads(raw)
         data["tags"] = tags
+
+        # ── Build rich description based on mode ──────────────────────────────
+        if mode == "video":
+            data["description"] = _build_video_description(
+                title          = data.get("title", original_title or video_title),
+                base_desc      = data.get("description", ""),
+                niche          = niche,
+                tags           = tags,
+                original_title = original_title or video_title,
+                lang           = lang,
+                research       = research,
+            )
+        else:
+            # Shorts: no article text, hashtags only
+            data["description"] = _build_shorts_description(tags, niche, research)
+
         return data
 
     except Exception as e:
@@ -1714,9 +1989,18 @@ def generate_metadata(video_title: str, transcript: str, idx: int,
             options       = niche_titles.get(niche.lower(), [f"{topic[:40]} 🔥{suffix}", f"Must watch 👀{suffix}"])
             fallback_title = options[idx % len(options)]
 
+        if mode == "video":
+            fallback_desc = _build_video_description(
+                title=fallback_title, base_desc="Watch till end 🔥\n\nLike & Subscribe 🔔\n\nComment below 👇",
+                niche=niche, tags=tags, original_title=original_title or video_title,
+                lang=lang, research=research,
+            )
+        else:
+            fallback_desc = _build_shorts_description(tags, niche, research)
+
         return {
             "title"         : fallback_title[:100],
-            "description"   : f"Watch till end 🔥\n\n{topic}\n\nLike & Subscribe 🔔\n\nComment below 👇",
+            "description"   : fallback_desc,
             "tags"          : tags,
             "hook_overlay"  : (topic[:30] if topic else niche.title()),
             "mood"          : "energetic",
@@ -1878,14 +2162,47 @@ def random_video_clips(src: Path, title_base: str) -> list:
     return clips
 
 def mix_music(src: Path, dst: Path, track: Path | None):
-    vol = float(os.getenv("MUSIC_VOLUME", 0.10))
-    if not track: shutil.copy(src,dst); return
+    vol  = float(os.getenv("MUSIC_VOLUME", 0.10))
+    if not track:
+        shutil.copy(src, dst)
+        return
+
     dur = get_duration(src)
-    subprocess.run([
-        "ffmpeg","-y","-i",str(src),"-stream_loop","-1","-i",str(track),
-        "-filter_complex",f"[1:a]volume={vol},atrim=0:{dur}[m];[0:a][m]amix=inputs=2:duration=first[a]",
-        "-map","0:v","-map","[a]","-c:v","copy","-c:a","aac","-b:a","192k",str(dst)
-    ],check=True,capture_output=True)
+
+    # Build the filter_complex.
+    # Strategy that works reliably across Windows FFmpeg builds:
+    #   1. Loop the music track with -stream_loop -1
+    #   2. Trim the looped audio to exactly the video duration using atrim+asetpts
+    #   3. Lower the music volume
+    #   4. Mix with the original audio using amix, taking the video duration
+    # We also pass -t dur to the output so ffmpeg stops when the video ends.
+    fc = (
+        f"[1:a]atrim=0:{dur:.3f},asetpts=PTS-STARTPTS,volume={vol}[m];"
+        f"[0:a][m]amix=inputs=2:duration=first:dropout_transition=2[a]"
+    )
+
+    cmd = [
+        "ffmpeg", "-y",
+        "-i", str(src),
+        "-stream_loop", "-1", "-i", str(track),
+        "-filter_complex", fc,
+        "-map", "0:v",
+        "-map", "[a]",
+        "-c:v", "copy",
+        "-c:a", "aac",
+        "-b:a", "192k",
+        "-t", str(dur),          # hard stop at video length
+        str(dst),
+    ]
+
+    result = subprocess.run(cmd, capture_output=True)
+    if result.returncode != 0:
+        # Log the actual FFmpeg stderr for diagnostics
+        log.error(f"[MixMusic] FFmpeg failed (rc={result.returncode}):\n"
+                  + result.stderr.decode(errors="replace")[-2000:])
+        # Fallback: copy the video without music rather than crashing the pipeline
+        log.warning("[MixMusic] Falling back to no-music copy")
+        shutil.copy(src, dst)
 
 # ── Captions ────────────────────────────────────────────────────────────────
 
@@ -2167,17 +2484,77 @@ def process_video_clips(video_path: Path, title_base: str, niche: str,
     return results
 
 # ══════════════════════════════════════════════════════════════════════════════
+#  UPLOAD
+#  KEY RULES:
+#  SHORTS  = mode=="shorts" → 9:16 + ≤60s → clean title, #shorts in desc only
+#  VIDEOS  = mode=="video"  → original aspect → no #shorts anywhere
+# ══════════════════════════════════════════════════════════════════════════════
+
+def upload_one(yt, item: dict, sched: dict, num: int, total: int,
+               privacy: str = "public") -> str:
+    from googleapiclient.http import MediaFileUpload
+
+    is_short = item.get("mode") == "shorts"
+
+    # Privacy
+    if privacy == "public":
+        status = {"privacyStatus":"public","selfDeclaredMadeForKids":False}
+    elif privacy == "scheduled":
+        pub = sched["utc"].strftime("%Y-%m-%dT%H:%M:%S.000Z")
+        status = {"privacyStatus":"private","publishAt":pub,"selfDeclaredMadeForKids":False}
+    else:
+        status = {"privacyStatus":"private","selfDeclaredMadeForKids":False}
+
+    title = item["title"]
+    desc  = item["description"]
+    tags  = list(item.get("tags",[]))
+
+    if is_short:
+        # SHORTS: Title is CLEAN — no #shorts in the title text.
+        # YouTube classifies Shorts by 9:16 aspect ratio + ≤60s duration.
+        # #shorts hashtag is injected into description by metadata generator.
+        title = title.replace(" #shorts","").replace("#shorts","").strip()
+        # Keep #shorts in the tag list for extra discovery signal
+        if "shorts" not in [t.lower() for t in tags]:
+            tags.insert(0,"shorts")
+        # Ensure #shorts is in the description
+        if "#shorts" not in desc:
+            desc = "#shorts " + desc
+    else:
+        # STRIP ALL #shorts from videos → must go to Videos section
+        title = title.replace(" #shorts","").replace("#shorts","").strip()
+        desc  = desc.replace("#shorts ","").replace(" #shorts","").replace("#shorts","").strip()
+        tags  = [t for t in tags if t.lower() not in ("shorts","youtubeshorts")]
+
+    body = {
+        "snippet": {
+            "title": title[:100],
+            "description": desc[:5000],
+            "tags": tags,
+            "categoryId": "24"
+        },
+        "status": status
+    }
+
+    print(f"  [Upload {num}/{total}] {title[:50]}...")
+    media = MediaFileUpload(item["path"], chunksize=1024*1024, resumable=True)
+    req   = yt.videos().insert(part="snippet,status", body=body, media_body=media)
+    
+    resp = None
+    while resp is None:
+        status_req, resp = req.next_chunk()
+        if status_req: progress_bar(int(status_req.progress()*100),100,"Uploading")
+    
+    vid_id = resp.get("id")
+    # Thumbnail
+    if item.get("thumb_path") and os.path.exists(item["thumb_path"]):
+        try:
+            yt.thumbnails().set(videoId=vid_id, media_body=MediaFileUpload(item["thumb_path"])).execute()
+        except: pass
+    return vid_id
+
+# ══════════════════════════════════════════════════════════════════════════════
 #  SMART SCHEDULING  - algorithm-aware with randomness
-#
-#  YOUTUBE ALGORITHM FACTS (2025):
-#  • Peak hours for Indian audience: 6PM-10PM weekdays, 10AM-9PM weekends
-#  • Shorts: algorithm tests with seed audience first 6-12h → needs isolation
-#  • Videos: best discovery when posted 30-60 min before peak (people browse)
-#  • Friday evening + Saturday = highest RPM + engagement for most niches
-#  • Avoid exact-hour posting (12:00, 18:00) - too many creators post then
-#  • Random ±15 min window avoids the algorithm "rush" at :00
-#  • 3 Shorts/day max - more than that and algorithm splits the test audience
-#  • Long videos need 48h gap minimum to accumulate watch hours before next upload
 # ══════════════════════════════════════════════════════════════════════════════
 
 # Upload frequency rules per content type (per day limits)
@@ -2396,74 +2773,6 @@ def make_schedule(items: list, niche: str = "general") -> list:
 
     return out
 
-# ══════════════════════════════════════════════════════════════════════════════
-#  UPLOAD
-#  KEY RULES:
-#  SHORTS  = mode=="shorts" → 9:16 + ≤60s → title has #shorts → Shorts feed
-#  VIDEOS  = mode=="video"  → original aspect → no #shorts → Videos section
-# ══════════════════════════════════════════════════════════════════════════════
-
-def upload_one(yt, item: dict, sched: dict, num: int, total: int,
-               privacy: str = "public") -> str:
-    from googleapiclient.http import MediaFileUpload
-
-    is_short = item.get("mode") == "shorts"
-
-    # Privacy
-    if privacy == "public":
-        status = {"privacyStatus":"public","selfDeclaredMadeForKids":False}
-    elif privacy == "scheduled":
-        pub = sched["utc"].strftime("%Y-%m-%dT%H:%M:%S.000Z")
-        status = {"privacyStatus":"private","publishAt":pub,"selfDeclaredMadeForKids":False}
-    else:
-        status = {"privacyStatus":"private","selfDeclaredMadeForKids":False}
-
-    title = item["title"]
-    desc  = item["description"]
-    tags  = list(item.get("tags",[]))
-
-    if is_short:
-        # Ensure #shorts is in title for Shorts discovery
-        if "#shorts" not in title.lower() and len(title) <= 93:
-            title = title.rstrip() + " #shorts"
-        if "shorts" not in [t.lower() for t in tags]:
-            tags.insert(0,"shorts")
-    else:
-        # STRIP ALL #shorts from videos → must go to Videos section
-        title = title.replace(" #shorts","").replace("#shorts","").strip()
-        desc  = desc.replace("#shorts ","").replace(" #shorts","").replace("#shorts","").strip()
-        tags  = [t for t in tags if t.lower() not in ("shorts","youtubeshorts")]
-
-    body = {
-        "snippet":{"title":title[:100],"description":desc[:5000],
-                   "tags":tags[:30],"categoryId":os.getenv("YOUTUBE_CATEGORY","22")},
-        "status": status,
-    }
-    log.info(f"[Upload] {'SHORT' if is_short else 'VIDEO'}: {title[:60]}")
-
-    media = MediaFileUpload(item["path"],mimetype="video/mp4",resumable=True,chunksize=1024*1024)
-    req   = yt.videos().insert(part="snippet,status",body=body,media_body=media)
-    resp  = None
-    while resp is None:
-        st,resp = req.next_chunk()
-        if st:
-            up = int(st.progress()*100)
-            ov = int(((num-1+st.progress())/total)*100)
-            progress_bar(ov,100,f"Uploading {num}/{total} → {up}%")
-
-    vid = resp["id"]
-    url = f"https://youtube.com/shorts/{vid}" if is_short else f"https://www.youtube.com/watch?v={vid}"
-    log.info(f"[Upload] ✓ {url}")
-
-    # Thumbnail - Shorts don't support custom API thumbnails and will return 403
-    tp = item.get("thumb_path","")
-    if tp and Path(tp).exists() and not is_short:
-        try:
-            yt.thumbnails().set(videoId=vid,
-                media_body=MediaFileUpload(tp,mimetype="image/jpeg")).execute()
-        except Exception as e: log.warning(f"[Thumb] {e}")
-    return vid
-
 
 def upload_all(items: list, channel: dict, privacy: str = "public") -> list:
     ch_name = channel.get("real_name", channel.get("label", "?"))
@@ -2547,15 +2856,73 @@ def upload_all(items: list, channel: dict, privacy: str = "public") -> list:
 #  SOURCE DOWNLOADERS
 # ══════════════════════════════════════════════════════════════════════════════
 
+def _safe_rmtree(d: Path):
+    """
+    Windows-safe directory cleanup.
+    • Waits up to 8 seconds for yt-dlp to release .part file handles.
+    • Uses shutil.rmtree onerror callback to skip still-locked files.
+    • Falls back to per-file deletion if the whole-tree delete fails.
+    """
+    if not d.exists():
+        return
+
+    # Step 1: wait for .part files to be released (yt-dlp rename window)
+    for attempt in range(4):
+        locked = list(d.glob("*.part"))
+        if not locked:
+            break
+        log.debug(f"[Download] Waiting for {len(locked)} .part file(s) to be released "
+                  f"(attempt {attempt + 1}/4)...")
+        time.sleep(2)
+
+    # Step 2: try to delete remaining .part files (best-effort)
+    for p in d.glob("*.part"):
+        try:
+            p.unlink()
+        except Exception:
+            pass
+
+    # Step 3: onerror callback — skip locked files, log and move on
+    def _on_error(func, path, exc_info):
+        err = exc_info[1]
+        if isinstance(err, PermissionError):
+            log.warning(f"[Download] Skipping locked file: {path}")
+        else:
+            log.warning(f"[Download] Could not delete {path}: {err}")
+
+    # Step 4: rmtree with onerror (won’t raise, just skips locked entries)
+    try:
+        shutil.rmtree(d, onerror=_on_error)
+        return
+    except Exception as e:
+        log.warning(f"[Download] rmtree failed ({e}) — falling back to per-file delete")
+
+    # Step 5: last resort — delete file-by-file, skip anything still locked
+    for attempt in range(3):
+        remaining = [f for f in d.rglob("*") if f.is_file()]
+        if not remaining:
+            break
+        for f in remaining:
+            try:
+                f.unlink()
+            except Exception:
+                pass
+        if attempt < 2:
+            time.sleep(2)
+    log.info(f"[Download] Cleanup complete for {d.name}")
+
+
 def download_url(url: str) -> list:
-    for d in [RAW_DIR,SHORTS_DIR]:
-        if d.exists(): shutil.rmtree(d)
-        d.mkdir(parents=True,exist_ok=True)
+    for d in [RAW_DIR, SHORTS_DIR]:
+        _safe_rmtree(d)
+        d.mkdir(parents=True, exist_ok=True)
     hdr(f"Downloading: {url[:60]}")
-    subprocess.run(["yt-dlp","--format","bestvideo[height<=1080]+bestaudio/best",
-                    "--merge-output-format","mp4","--output",str(RAW_DIR/"%(title)s.%(ext)s"),
-                    "--no-playlist",url],check=True)
-    v=list(RAW_DIR.glob("*.mp4")); ok(f"Downloaded {len(v)} video(s)"); return v
+    subprocess.run(["yt-dlp", "--format", "bestvideo[height<=1080]+bestaudio/best",
+                    "--merge-output-format", "mp4", "--output", str(RAW_DIR / "%(title)s.%(ext)s"),
+                    "--no-playlist", url], check=True)
+    v = list(RAW_DIR.glob("*.mp4"))
+    ok(f"Downloaded {len(v)} video(s)")
+    return v
 
 def download_viral(channel_url: str, n: int = 5) -> list:
     """
@@ -2703,9 +3070,46 @@ def download_viral(channel_url: str, n: int = 5) -> list:
     return videos, _viral_titles
 
 def collect_local(folder: str) -> list:
-    exts={".mp4",".mov",".mkv",".avi",".webm"}
-    v=[p for p in Path(folder).iterdir() if p.suffix.lower() in exts]
-    ok(f"Found {len(v)} local video(s)"); return v
+    exts = {".mp4", ".mov", ".mkv", ".avi", ".webm"}
+
+    # Sanitise user input: strip surrounding quotes, whitespace, trailing slashes
+    folder = folder.strip().strip('"').strip("'").rstrip("\\/")
+
+    p = Path(folder)
+
+    # Case 1: path does not exist – try appending a video extension (user may have
+    # typed the path without the .mp4 extension, or the folder name has odd chars)
+    if not p.exists():
+        for ext in exts:
+            candidate = Path(folder + ext)
+            if candidate.exists():
+                ok(f"Found 1 local video: {candidate.name}")
+                return [candidate]
+        log.error(f"[Local] Path not found: {folder!r}")
+        print(f"\n{C.RED}ERROR  Path not found:\n  {folder}{C.RESET}")
+        print("  Check that the folder (or file) path is correct and try again.")
+        sys.exit(1)
+
+    # Case 2: user gave a path to a single video file
+    if p.is_file():
+        if p.suffix.lower() in exts:
+            ok(f"Found 1 local video: {p.name}")
+            return [p]
+        else:
+            log.error(f"[Local] Unsupported file type: {p.suffix}")
+            print(f"\n{C.RED}ERROR  Not a supported video file: {p}{C.RESET}")
+            print(f"  Supported formats: {', '.join(sorted(exts))}")
+            sys.exit(1)
+
+    # Case 3: path is a directory – scan for video files
+    v = [f for f in p.iterdir() if f.is_file() and f.suffix.lower() in exts]
+    if not v:
+        print(f"\n{C.YELLOW}WARNING  No video files found in: {folder}{C.RESET}")
+        print(f"  Supported formats: {', '.join(sorted(exts))}")
+        sys.exit(1)
+
+    ok(f"Found {len(v)} local video(s) in '{p.name}'")
+    return v
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  ORIGINAL VIDEO METADATA FETCHER
@@ -3173,6 +3577,9 @@ def main():
 
 
 if __name__ == "__main__":
+    import time
+    print("Starting automation... waiting for API sync.")
+    time.sleep(5) # Give the connection a moment to breathe
     main()
 
 #  ULTIMATE EDITION MUSIC CONFIG
