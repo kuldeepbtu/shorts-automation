@@ -2162,25 +2162,17 @@ def random_video_clips(src: Path, title_base: str) -> list:
     return clips
 
 def mix_music(src: Path, dst: Path, track: Path | None):
+    """Mix a local audio track file into a video (used as fallback only)."""
     vol  = float(os.getenv("MUSIC_VOLUME", 0.10))
     if not track:
         shutil.copy(src, dst)
         return
 
     dur = get_duration(src)
-
-    # Build the filter_complex.
-    # Strategy that works reliably across Windows FFmpeg builds:
-    #   1. Loop the music track with -stream_loop -1
-    #   2. Trim the looped audio to exactly the video duration using atrim+asetpts
-    #   3. Lower the music volume
-    #   4. Mix with the original audio using amix, taking the video duration
-    # We also pass -t dur to the output so ffmpeg stops when the video ends.
     fc = (
         f"[1:a]atrim=0:{dur:.3f},asetpts=PTS-STARTPTS,volume={vol}[m];"
         f"[0:a][m]amix=inputs=2:duration=first:dropout_transition=2[a]"
     )
-
     cmd = [
         "ffmpeg", "-y",
         "-i", str(src),
@@ -2191,18 +2183,147 @@ def mix_music(src: Path, dst: Path, track: Path | None):
         "-c:v", "copy",
         "-c:a", "aac",
         "-b:a", "192k",
-        "-t", str(dur),          # hard stop at video length
+        "-t", str(dur),
+        str(dst),
+    ]
+    result = subprocess.run(cmd, capture_output=True)
+    if result.returncode != 0:
+        log.error(f"[MixMusic] FFmpeg failed (rc={result.returncode}):\n"
+                  + result.stderr.decode(errors="replace")[-2000:])
+        log.warning("[MixMusic] Falling back to no-music copy")
+        shutil.copy(src, dst)
+
+
+def get_trending_short_url(niche: str, _cache: dict = {}) -> str:
+    """
+    Find a trending YouTube Shorts URL for the given niche.
+    Uses yt-dlp search — no download, just returns the watch URL.
+    Caches results per niche for 6 hours so repeated calls are instant.
+    """
+    now = time.time()
+    cached = _cache.get(niche)
+    if cached and (now - cached["ts"]) < 6 * 3600 and cached["urls"]:
+        url = random.choice(cached["urls"])
+        log.info(f"[TrendingAudio] Cache hit for '{niche}': {url}")
+        return url
+
+    log.info(f"[TrendingAudio] Searching trending Shorts for niche: '{niche}'")
+    urls = []
+
+    # Method 1: YouTube Data API
+    yt_key = os.getenv("YT_DATA_API_KEY", "")
+    if yt_key:
+        try:
+            query  = f"viral {niche} shorts"
+            params = urllib.parse.urlencode({
+                "part": "snippet", "q": query, "type": "video",
+                "videoDuration": "short", "order": "viewCount",
+                "maxResults": "10", "key": yt_key,
+            })
+            data = json.loads(http_get(
+                f"https://www.googleapis.com/youtube/v3/search?{params}"))
+            for item in data.get("items", []):
+                vid = item.get("id", {}).get("videoId", "")
+                if vid:
+                    urls.append(f"https://www.youtube.com/watch?v={vid}")
+            log.info(f"[TrendingAudio] API: {len(urls)} results")
+        except Exception as e:
+            log.warning(f"[TrendingAudio] API search failed: {e}")
+
+    # Method 2: yt-dlp search (no API key needed)
+    if not urls:
+        try:
+            result = subprocess.run(
+                ["yt-dlp", f"ytsearch10:viral {niche} shorts",
+                 "--flat-playlist", "--print", "%(id)s",
+                 "--match-filter", "duration < 60", "--no-warnings"],
+                capture_output=True, text=True, timeout=30
+            )
+            for line in result.stdout.strip().splitlines():
+                vid = line.strip()
+                if vid and len(vid) == 11:
+                    urls.append(f"https://www.youtube.com/watch?v={vid}")
+            log.info(f"[TrendingAudio] yt-dlp search: {len(urls)} results")
+        except Exception as e:
+            log.warning(f"[TrendingAudio] yt-dlp search failed: {e}")
+
+    if urls:
+        _cache[niche] = {"urls": urls, "ts": now}
+        return random.choice(urls)
+
+    log.warning(f"[TrendingAudio] No trending Shorts found for '{niche}'")
+    return ""
+
+
+def mix_music_from_url(src: Path, dst: Path, yt_url: str) -> bool:
+    """
+    Stream audio directly from a YouTube URL into the video mix.
+    Uses yt-dlp piped into ffmpeg stdin — NO audio file is saved to disk.
+
+    Returns True on success, False on failure (caller should fallback to copy).
+    """
+    vol = float(os.getenv("MUSIC_VOLUME", 0.15))
+    dur = get_duration(src)
+
+    # yt-dlp streams raw audio bytes to stdout
+    ytdlp_cmd = [
+        "yt-dlp",
+        "--no-playlist",
+        "--no-warnings",
+        "-f", "bestaudio",          # best audio quality
+        "-o", "-",                  # output to stdout (pipe)
+        "--quiet",
+        yt_url,
+    ]
+
+    # ffmpeg reads the piped audio from stdin as input 2
+    fc = (
+        f"[1:a]atrim=0:{dur:.3f},asetpts=PTS-STARTPTS,volume={vol}[m];"
+        f"[0:a][m]amix=inputs=2:duration=first:dropout_transition=2[a]"
+    )
+    ffmpeg_cmd = [
+        "ffmpeg", "-y",
+        "-i", str(src),             # input 0: the cropped/captioned short
+        "-i", "pipe:0",             # input 1: audio piped from yt-dlp
+        "-filter_complex", fc,
+        "-map", "0:v",
+        "-map", "[a]",
+        "-c:v", "copy",
+        "-c:a", "aac",
+        "-b:a", "192k",
+        "-t", str(dur),
         str(dst),
     ]
 
-    result = subprocess.run(cmd, capture_output=True)
-    if result.returncode != 0:
-        # Log the actual FFmpeg stderr for diagnostics
-        log.error(f"[MixMusic] FFmpeg failed (rc={result.returncode}):\n"
-                  + result.stderr.decode(errors="replace")[-2000:])
-        # Fallback: copy the video without music rather than crashing the pipeline
-        log.warning("[MixMusic] Falling back to no-music copy")
-        shutil.copy(src, dst)
+    try:
+        log.info(f"[TrendingAudio] Streaming from: {yt_url}")
+        # Start yt-dlp, pipe its stdout → ffmpeg stdin
+        ytdlp_proc  = subprocess.Popen(ytdlp_cmd, stdout=subprocess.PIPE,
+                                       stderr=subprocess.DEVNULL)
+        ffmpeg_proc = subprocess.Popen(ffmpeg_cmd, stdin=ytdlp_proc.stdout,
+                                       stdout=subprocess.DEVNULL,
+                                       stderr=subprocess.PIPE)
+        # Allow yt-dlp to receive SIGPIPE when ffmpeg exits
+        ytdlp_proc.stdout.close()
+        _, ff_err = ffmpeg_proc.communicate(timeout=120)
+        ytdlp_proc.wait(timeout=10)
+
+        if ffmpeg_proc.returncode == 0:
+            log.info("[TrendingAudio] ✓ Audio mixed successfully")
+            return True
+        else:
+            log.error("[TrendingAudio] ffmpeg error:\n"
+                      + ff_err.decode(errors="replace")[-1000:])
+            return False
+    except subprocess.TimeoutExpired:
+        log.warning("[TrendingAudio] Timeout — killing processes")
+        for p in (ffmpeg_proc, ytdlp_proc):
+            try: p.kill()
+            except: pass
+        return False
+    except Exception as e:
+        log.warning(f"[TrendingAudio] Stream mix failed: {e}")
+        return False
 
 # ── Captions ────────────────────────────────────────────────────────────────
 
@@ -2301,156 +2422,12 @@ def ensure_music():
             except: pass
     progress_bar(len(starters),len(starters),"Done")
 
-# ── Trending audio from YouTube Shorts ──────────────────────────────────────
-
-TRENDING_AUDIO_DIR  = MUSIC_DIR / "trending"
-_TRENDING_AUDIO_TTL = 6 * 3600   # refresh trending audio cache every 6 hours
-
-def fetch_trending_audio(niche: str = "general", n: int = 8) -> list:
-    """
-    Find trending YouTube Shorts for the given niche and download their audio.
-
-    Strategy:
-      1. Search YouTube Data API for viral niche Shorts (if YT_DATA_API_KEY set).
-      2. Fallback: use yt-dlp to search YouTube directly (no API key needed).
-    Audio saved to: assets/music/trending/<niche>/<title>.mp3
-    Cache TTL: 6 hours (won't re-download what already exists).
-
-    Returns list of Paths to downloaded audio files.
-    """
-    out_dir = TRENDING_AUDIO_DIR / niche.lower()
-    out_dir.mkdir(parents=True, exist_ok=True)
-
-    # Check if cache is still fresh (any file newer than TTL)
-    existing = sorted(out_dir.glob("*.mp3"), key=lambda p: p.stat().st_mtime, reverse=True)
-    if existing and (time.time() - existing[0].stat().st_mtime) < _TRENDING_AUDIO_TTL:
-        ok(f"[TrendingAudio] Cache valid — {len(existing)} track(s) for '{niche}'")
-        return existing
-
-    log.info(f"[TrendingAudio] Fetching trending Shorts audio for niche: '{niche}'")
-    video_ids = []
-
-    # ── Method 1: YouTube Data API ────────────────────────────────────────────
-    yt_key = os.getenv("YT_DATA_API_KEY", "")
-    if yt_key:
-        try:
-            query  = f"viral {niche} shorts trending"
-            params = urllib.parse.urlencode({
-                "part"          : "snippet",
-                "q"             : query,
-                "type"          : "video",
-                "videoDuration" : "short",
-                "order"         : "viewCount",
-                "maxResults"    : str(n),
-                "key"           : yt_key,
-                "publishedAfter": (
-                    datetime.now(timezone.utc).replace(tzinfo=None)
-                    - timedelta(days=14)
-                ).strftime("%Y-%m-%dT%H:%M:%SZ"),
-            })
-            data = json.loads(http_get(
-                f"https://www.googleapis.com/youtube/v3/search?{params}"
-            ))
-            for item in data.get("items", []):
-                vid = item.get("id", {}).get("videoId", "")
-                if vid:
-                    video_ids.append(vid)
-            log.info(f"[TrendingAudio] YouTube API: found {len(video_ids)} videos")
-        except Exception as e:
-            log.warning(f"[TrendingAudio] YouTube API error: {e}")
-
-    # ── Method 2: yt-dlp search (no API key needed) ───────────────────────────
-    if not video_ids:
-        try:
-            query = f"viral {niche} shorts"
-            result = subprocess.run(
-                [
-                    "yt-dlp",
-                    f"ytsearch{n}:{query}",
-                    "--flat-playlist",
-                    "--print", "%(id)s",
-                    "--no-warnings",
-                    "--match-filter", "duration < 60",
-                ],
-                capture_output=True, text=True, timeout=30
-            )
-            for line in result.stdout.strip().splitlines():
-                vid = line.strip()
-                if vid and len(vid) == 11:
-                    video_ids.append(vid)
-            log.info(f"[TrendingAudio] yt-dlp search: found {len(video_ids)} videos")
-        except Exception as e:
-            log.warning(f"[TrendingAudio] yt-dlp search error: {e}")
-
-    if not video_ids:
-        log.warning("[TrendingAudio] No trending videos found — keeping existing library")
-        return existing
-
-    # ── Download audio-only via yt-dlp ────────────────────────────────────────
-    downloaded = list(existing)   # start with what we already have
-    new_count  = 0
-    print(f"\n  {C.CYAN}♪  Downloading trending audio ({len(video_ids)} tracks)...{C.RESET}")
-
-    for i, vid_id in enumerate(video_ids):
-        url      = f"https://www.youtube.com/watch?v={vid_id}"
-        out_tmpl = str(out_dir / f"%(title).40s_{vid_id}.%(ext)s")
-        # Check if already downloaded
-        if any(vid_id in p.stem for p in out_dir.glob("*.mp3")):
-            log.debug(f"[TrendingAudio] Already have {vid_id} — skipping")
-            continue
-        try:
-            progress_bar(i, len(video_ids), f"Audio {i+1}/{len(video_ids)}")
-            subprocess.run(
-                [
-                    "yt-dlp",
-                    "--extract-audio",
-                    "--audio-format", "mp3",
-                    "--audio-quality", "5",      # 128kbps, small file
-                    "--no-playlist",
-                    "--no-warnings",
-                    "--output", out_tmpl,
-                    url,
-                ],
-                capture_output=True, timeout=120
-            )
-            new_files = [p for p in out_dir.glob("*.mp3") if vid_id in p.stem]
-            if new_files:
-                downloaded.extend(new_files)
-                new_count += 1
-        except Exception as e:
-            log.warning(f"[TrendingAudio] Download failed for {vid_id}: {e}")
-
-    progress_bar(len(video_ids), len(video_ids), "Trending audio ready")
-    ok(f"[TrendingAudio] {new_count} new track(s) downloaded for '{niche}'")
-
-    # Return all files in directory (deduplicated, most recent first)
-    all_files = sorted(out_dir.glob("*.mp3"), key=lambda p: p.stat().st_mtime, reverse=True)
-    return all_files
-
-
 def fetch_music(mood: str = "energetic", niche: str = "general",
-                use_trending: bool = True) -> Path | None:
+                use_trending: bool = False) -> Path | None:
     """
-    Get a niche-specific track for Shorts.
-
-    Priority:
-    1. Trending YouTube Shorts audio for this niche (ALWAYS preferred — fetches if cache is empty)
-    2. Local fallback (Jamendo / niche folder / mood folder / general) — ONLY if trending fetch fails
+    Local music library fallback.
+    Only called when direct trending audio stream fails.
     """
-    # ── 1. Trending YouTube Shorts audio (always first) ───────────────────────
-    if use_trending:
-        # This call handles caching — it only re-downloads when the 6-hour TTL expires
-        trending_files = fetch_trending_audio(niche, n=8)
-        if trending_files:
-            # Randomise among the 5 freshest tracks to add variety each short
-            pool = trending_files[:min(len(trending_files), 5)]
-            pick = random.choice(pool)
-            log.info(f"[Music] ♪ Trending audio: {pick.name[:60]}")
-            return pick
-        log.warning(f"[Music] Trending audio unavailable for '{niche}' — using local library")
-
-    # ── 2. Local fallback (used only if trending download completely failed) ───
-    # Jamendo API
     jid = os.getenv("JAMENDO_CLIENT_ID", "")
     if jid:
         dest = MUSIC_DIR / f"jamendo_{niche}_{mood}.mp3"
@@ -2473,24 +2450,21 @@ def fetch_music(mood: str = "energetic", niche: str = "general",
         elif dest.exists():
             return dest
 
-    # Local folders
     for folder, pattern in [
-        (MUSIC_DIR / niche.lower(),  "*.mp3"),
-        (MUSIC_DIR / "moods",        f"mood_{mood}*.mp3"),
-        (MUSIC_DIR / "general",      "*.mp3"),
-        (MUSIC_DIR,                  "*.mp3"),
+        (MUSIC_DIR / niche.lower(), "*.mp3"),
+        (MUSIC_DIR / "moods",       f"mood_{mood}*.mp3"),
+        (MUSIC_DIR / "general",     "*.mp3"),
+        (MUSIC_DIR,                 "*.mp3"),
     ]:
         if folder.exists():
             files = list(folder.glob(pattern))
             if files:
-                log.info(f"[Music] Local fallback: {folder.name}")
                 return random.choice(files)
 
-    # Deep recursive last resort
     all_mp3 = list(MUSIC_DIR.rglob("*.mp3"))
     return random.choice(all_mp3) if all_mp3 else None
 
-# ══════════════════════════════════════════════════════════════════════════════
+
 #  PROCESS SHORTS  (9:16 vertical ≤58s → Shorts feed)
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -2502,17 +2476,6 @@ def process_shorts(video_path: Path, title_base: str, niche: str,
                    is_viral: bool = False,
                    use_trending_audio: bool = True) -> list:
     SHORTS_DIR.mkdir(parents=True,exist_ok=True)
-
-    # ── Pre-fetch trending Shorts audio for this niche ───────────────────────
-    if use_trending_audio:
-        print(f"\n  {C.CYAN}♪  Pre-fetching trending Shorts audio for '{niche}'...{C.RESET}")
-        trending_tracks = fetch_trending_audio(niche, n=8)
-        if trending_tracks:
-            ok(f"Trending audio ready: {len(trending_tracks)} track(s) available")
-        else:
-            warn("No trending audio found — will use local music library")
-    else:
-        trending_tracks = []
 
     qt=""
     try:
@@ -2548,9 +2511,27 @@ def process_shorts(video_path: Path, title_base: str, niche: str,
                                lang=lang,original_title=original_title,
                                original_desc=original_desc,title_style=title_style)
         thumb=generate_thumbnail(f_cap,meta["title"],niche)
-        progress_bar(3,4,"Mixing music...")
-        track=fetch_music(meta.get("mood","energetic"), niche, use_trending=use_trending_audio)
-        mix_music(f_cap,f_fin,track)
+        progress_bar(3,4,"Mixing trending audio...")
+
+        # ── Stream trending audio directly from YouTube ───────────────────────
+        trend_url  = get_trending_short_url(niche) if use_trending_audio else ""
+        track_label = "none"
+        if trend_url:
+            success = mix_music_from_url(f_cap, f_fin, trend_url)
+            if success:
+                track_label = trend_url.split("v=")[-1]   # video ID as label
+                src_label   = f"{C.MAGENTA}♪ Trending{C.RESET}"
+            else:
+                log.warning("[TrendingAudio] Stream failed — copying without music")
+                shutil.copy(f_cap, f_fin)
+                src_label = f"{C.DIM}No audio{C.RESET}"
+        else:
+            # No trending URL found — fall back to local library
+            local_track = fetch_music(meta.get("mood", "energetic"), niche, use_trending=False)
+            mix_music(f_cap, f_fin, local_track)
+            track_label = local_track.name if local_track else "none"
+            src_label   = f"{C.DIM}Library{C.RESET}"
+
         for tmp in [f_crop,f_cap]: tmp.unlink(missing_ok=True)
         desc=meta["description"]
         if track and "bensound" in track.name.lower(): desc+="\n\nMusic: www.bensound.com"
