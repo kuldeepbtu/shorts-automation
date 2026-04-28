@@ -2301,16 +2301,157 @@ def ensure_music():
             except: pass
     progress_bar(len(starters),len(starters),"Done")
 
-def fetch_music(mood: str = "energetic", niche: str = "general") -> Path | None:
+# ── Trending audio from YouTube Shorts ──────────────────────────────────────
+
+TRENDING_AUDIO_DIR  = MUSIC_DIR / "trending"
+_TRENDING_AUDIO_TTL = 6 * 3600   # refresh trending audio cache every 6 hours
+
+def fetch_trending_audio(niche: str = "general", n: int = 8) -> list:
+    """
+    Find trending YouTube Shorts for the given niche and download their audio.
+
+    Strategy:
+      1. Search YouTube Data API for viral niche Shorts (if YT_DATA_API_KEY set).
+      2. Fallback: use yt-dlp to search YouTube directly (no API key needed).
+    Audio saved to: assets/music/trending/<niche>/<title>.mp3
+    Cache TTL: 6 hours (won't re-download what already exists).
+
+    Returns list of Paths to downloaded audio files.
+    """
+    out_dir = TRENDING_AUDIO_DIR / niche.lower()
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    # Check if cache is still fresh (any file newer than TTL)
+    existing = sorted(out_dir.glob("*.mp3"), key=lambda p: p.stat().st_mtime, reverse=True)
+    if existing and (time.time() - existing[0].stat().st_mtime) < _TRENDING_AUDIO_TTL:
+        ok(f"[TrendingAudio] Cache valid — {len(existing)} track(s) for '{niche}'")
+        return existing
+
+    log.info(f"[TrendingAudio] Fetching trending Shorts audio for niche: '{niche}'")
+    video_ids = []
+
+    # ── Method 1: YouTube Data API ────────────────────────────────────────────
+    yt_key = os.getenv("YT_DATA_API_KEY", "")
+    if yt_key:
+        try:
+            query  = f"viral {niche} shorts trending"
+            params = urllib.parse.urlencode({
+                "part"          : "snippet",
+                "q"             : query,
+                "type"          : "video",
+                "videoDuration" : "short",
+                "order"         : "viewCount",
+                "maxResults"    : str(n),
+                "key"           : yt_key,
+                "publishedAfter": (
+                    datetime.now(timezone.utc).replace(tzinfo=None)
+                    - timedelta(days=14)
+                ).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            })
+            data = json.loads(http_get(
+                f"https://www.googleapis.com/youtube/v3/search?{params}"
+            ))
+            for item in data.get("items", []):
+                vid = item.get("id", {}).get("videoId", "")
+                if vid:
+                    video_ids.append(vid)
+            log.info(f"[TrendingAudio] YouTube API: found {len(video_ids)} videos")
+        except Exception as e:
+            log.warning(f"[TrendingAudio] YouTube API error: {e}")
+
+    # ── Method 2: yt-dlp search (no API key needed) ───────────────────────────
+    if not video_ids:
+        try:
+            query = f"viral {niche} shorts"
+            result = subprocess.run(
+                [
+                    "yt-dlp",
+                    f"ytsearch{n}:{query}",
+                    "--flat-playlist",
+                    "--print", "%(id)s",
+                    "--no-warnings",
+                    "--match-filter", "duration < 60",
+                ],
+                capture_output=True, text=True, timeout=30
+            )
+            for line in result.stdout.strip().splitlines():
+                vid = line.strip()
+                if vid and len(vid) == 11:
+                    video_ids.append(vid)
+            log.info(f"[TrendingAudio] yt-dlp search: found {len(video_ids)} videos")
+        except Exception as e:
+            log.warning(f"[TrendingAudio] yt-dlp search error: {e}")
+
+    if not video_ids:
+        log.warning("[TrendingAudio] No trending videos found — keeping existing library")
+        return existing
+
+    # ── Download audio-only via yt-dlp ────────────────────────────────────────
+    downloaded = list(existing)   # start with what we already have
+    new_count  = 0
+    print(f"\n  {C.CYAN}♪  Downloading trending audio ({len(video_ids)} tracks)...{C.RESET}")
+
+    for i, vid_id in enumerate(video_ids):
+        url      = f"https://www.youtube.com/watch?v={vid_id}"
+        out_tmpl = str(out_dir / f"%(title).40s_{vid_id}.%(ext)s")
+        # Check if already downloaded
+        if any(vid_id in p.stem for p in out_dir.glob("*.mp3")):
+            log.debug(f"[TrendingAudio] Already have {vid_id} — skipping")
+            continue
+        try:
+            progress_bar(i, len(video_ids), f"Audio {i+1}/{len(video_ids)}")
+            subprocess.run(
+                [
+                    "yt-dlp",
+                    "--extract-audio",
+                    "--audio-format", "mp3",
+                    "--audio-quality", "5",      # 128kbps, small file
+                    "--no-playlist",
+                    "--no-warnings",
+                    "--output", out_tmpl,
+                    url,
+                ],
+                capture_output=True, timeout=120
+            )
+            new_files = [p for p in out_dir.glob("*.mp3") if vid_id in p.stem]
+            if new_files:
+                downloaded.extend(new_files)
+                new_count += 1
+        except Exception as e:
+            log.warning(f"[TrendingAudio] Download failed for {vid_id}: {e}")
+
+    progress_bar(len(video_ids), len(video_ids), "Trending audio ready")
+    ok(f"[TrendingAudio] {new_count} new track(s) downloaded for '{niche}'")
+
+    # Return all files in directory (deduplicated, most recent first)
+    all_files = sorted(out_dir.glob("*.mp3"), key=lambda p: p.stat().st_mtime, reverse=True)
+    return all_files
+
+
+def fetch_music(mood: str = "energetic", niche: str = "general",
+                use_trending: bool = True) -> Path | None:
     """
     Get mood-matched, niche-specific track.
     Priority:
+    0. Trending YouTube Shorts audio (cached, refreshed every 6h) - if available
     1. Jamendo API (live, mood-tagged) - if key set
     2. Niche subfolder: assets/music/<niche>/ - best match
     3. Mood subfolder: assets/music/moods/mood_<mood>*.mp3
     4. General folder: assets/music/general/
     5. Any .mp3 anywhere in assets/music/
     """
+    # 0. Trending YouTube Shorts audio (highest priority)
+    if use_trending:
+        trending_dir = TRENDING_AUDIO_DIR / niche.lower()
+        trending_files = sorted(
+            trending_dir.glob("*.mp3"),
+            key=lambda p: p.stat().st_mtime, reverse=True
+        ) if trending_dir.exists() else []
+        if trending_files:
+            pick = random.choice(trending_files[:min(len(trending_files), 5)])
+            log.info(f"[Music] ♪ Using trending audio: {pick.name[:50]}")
+            return pick
+
     # 1. Jamendo live fetch
     jid = os.getenv("JAMENDO_CLIENT_ID", "")
     if jid:
@@ -2372,8 +2513,21 @@ def process_shorts(video_path: Path, title_base: str, niche: str,
                    lang: str = "english", caption_lang: str = "en",
                    title_style: str = "fresh",
                    original_title: str = "", original_desc: str = "",
-                   is_viral: bool = False) -> list:
+                   is_viral: bool = False,
+                   use_trending_audio: bool = True) -> list:
     SHORTS_DIR.mkdir(parents=True,exist_ok=True)
+
+    # ── Pre-fetch trending Shorts audio for this niche ───────────────────────
+    if use_trending_audio:
+        print(f"\n  {C.CYAN}♪  Pre-fetching trending Shorts audio for '{niche}'...{C.RESET}")
+        trending_tracks = fetch_trending_audio(niche, n=8)
+        if trending_tracks:
+            ok(f"Trending audio ready: {len(trending_tracks)} track(s) available")
+        else:
+            warn("No trending audio found — will use local music library")
+    else:
+        trending_tracks = []
+
     qt=""
     try:
         ch=extract_audio(video_path,0,min(30,int(get_duration(video_path))))
@@ -2409,11 +2563,18 @@ def process_shorts(video_path: Path, title_base: str, niche: str,
                                original_desc=original_desc,title_style=title_style)
         thumb=generate_thumbnail(f_cap,meta["title"],niche)
         progress_bar(3,4,"Mixing music...")
-        track=fetch_music(meta.get("mood","energetic"), niche)
+        track=fetch_music(meta.get("mood","energetic"), niche, use_trending=use_trending_audio)
         mix_music(f_cap,f_fin,track)
         for tmp in [f_crop,f_cap]: tmp.unlink(missing_ok=True)
         desc=meta["description"]
         if track and "bensound" in track.name.lower(): desc+="\n\nMusic: www.bensound.com"
+        # Show which audio source was used
+        if track:
+            is_trending_track = (TRENDING_AUDIO_DIR / niche.lower()) in track.parents
+            src_label = f"{C.MAGENTA}♪ Trending{C.RESET}" if is_trending_track else f"{C.DIM}Library{C.RESET}"
+        else:
+            src_label = f"{C.DIM}None{C.RESET}"
+        track_name = track.stem[:45] if track else "none"
         progress_bar(4,4,f"Short {i+1} ready ✓")
         print(f"\n  ✦ Title : {meta['title'][:65]}")
         print(f"  ✦ Hook  : {meta.get('hook_overlay','')[:40]}")
