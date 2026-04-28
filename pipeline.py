@@ -2533,23 +2533,16 @@ def process_shorts(video_path: Path, title_base: str, niche: str,
             src_label   = f"{C.DIM}Library{C.RESET}"
 
         for tmp in [f_crop,f_cap]: tmp.unlink(missing_ok=True)
-        desc=meta["description"]
-        if track and "bensound" in track.name.lower(): desc+="\n\nMusic: www.bensound.com"
-        # Show which audio source was used
-        if track:
-            is_trending_track = (TRENDING_AUDIO_DIR / niche.lower()) in track.parents
-            src_label = f"{C.MAGENTA}♪ Trending{C.RESET}" if is_trending_track else f"{C.DIM}Library{C.RESET}"
-        else:
-            src_label = f"{C.DIM}None{C.RESET}"
-        track_name = track.stem[:45] if track else "none"
+        desc = meta["description"]
         progress_bar(4,4,f"Short {i+1} ready ✓")
         print(f"\n  ✦ Title : {meta['title'][:65]}")
         print(f"  ✦ Hook  : {meta.get('hook_overlay','')[:40]}")
+        print(f"  ✦ Audio : {src_label}  {C.DIM}{track_label}{C.RESET}")
         print(f"  → Will appear in: SHORTS FEED (9:16 + ≤60s)")
         shorts.append({"path":str(f_fin),"thumb_path":str(thumb) if thumb else "",
                        "title":meta["title"][:100],"description":desc[:5000],
                        "tags":meta.get("tags",[]),"mood":meta.get("mood","energetic"),
-                       "music_track":track.name if track else "none",
+                       "music_track":track_label,
                        "title_alt":meta.get("title_alt",""),
                        "comment_prompt":meta.get("comment_prompt",""),
                        "mode":"shorts"})
