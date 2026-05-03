@@ -22,7 +22,6 @@ MUSIC_DIR    = BASE_DIR / "assets"  / "music"
 THUMB_DIR    = BASE_DIR / "output" / "thumbnails"
 LOG_FILE     = BASE_DIR / "automation.log"
 MANIFEST     = BASE_DIR / "upload_manifest.json"
-DESKTOP      = Path.home() / "Desktop" / "upload_manifest.json"
 PROCESSED_DB = BASE_DIR / "processed_videos.json"
 CHECKPOINT   = BASE_DIR / "checkpoint.json"
 CHANNELS_DB  = BASE_DIR / "channels_cache.json"
@@ -72,6 +71,32 @@ NICHE_TAGS = {
     "general"   :["facts","interesting","amazing","tips","lifehacks","howto",
                   "tutorial","diy","satisfying","trending","viral","india"],
 }
+
+# ── FIXED HASHTAGS — appended to EVERY video & shorts title + description ────
+# These are injected before all other tags so they always appear first.
+FIXED_HASHTAGS = [
+    "youtube", "youtuber", "viral", "trending", "explore", "explorepage",
+    "fyp", "foryou", "foryoupage", "viralvideo", "subscribe", "like",
+    "comment", "share", "subscribenow", "support", "grow", "youtubechannel",
+    "newvideo", "contentcreator", "creator", "videocreator", "digitalcreator",
+    "content", "video", "editing", "videomaking", "creatorlife", "influencer",
+    "socialmedia", "youtubeshorts", "shorts", "shortvideo", "shortsvideo",
+    "reels", "viralshorts", "trendingnow", "youtubealgorithm", "views", "growth",
+    "music", "song", "edit", "videoedit", "edits", "amv", "status", "lyrics",
+    "musicvideo", "lofi", "gaming", "gamer", "gameplay", "youtubegaming",
+    "gamingcommunity", "gamers", "livegaming", "streamer", "onlinegaming",
+    "gaminglife", "study", "education", "learning", "students", "studytime",
+    "studygram", "knowledge", "tutorial", "howto", "tips", "funny", "comedy",
+    "memes", "funnyvideo", "lol", "entertainment", "laugh", "fun", "humor",
+    "jokes", "india", "indianyoutuber", "indiancreator", "hindivideo", "desi",
+    "indiacontent", "indian", "trendingindia", "hindishorts", "indianvlogger",
+    "motivation", "lifestyle", "vlog", "dailyvlog", "tech", "review",
+    "unboxing", "fitness", "travel", "food",
+]
+
+# Compact set of top-priority hashtags safe to append to a title
+# (kept short so they fit within YouTube's 100-char title limit)
+_TITLE_HASHTAG_SUFFIX = "#shorts #viral #trending #fyp"
 
 def get_tags(niche: str, i: int, trending: list = None) -> list:
     pool = NICHE_TAGS.get(niche.lower(), NICHE_TAGS["general"])
@@ -1719,34 +1744,32 @@ def _build_hashtag_block(tags: list, niche: str, research: dict,
                          for_shorts: bool = False) -> str:
     """
     Build a dense SEO hashtag block.
+    FIXED_HASHTAGS are always injected first so they appear in every upload.
     For videos  : as many hashtags as fit within the remaining description budget.
     For shorts  : compact block that keeps total description under ~600 chars.
     """
-    # Start with the supplied tag list
-    base = list(tags)
+    # ── 1. Always start with the fixed master hashtag list (user-defined) ──
+    base = list(FIXED_HASHTAGS)          # copy so we don't mutate the global
 
-    # Add trending tags from research
+    # ── 2. Add the per-video AI-picked tags ────────────────────────────────
+    for t in tags:
+        t_clean = t.strip().replace("#", "")
+        if t_clean and t_clean not in base:
+            base.append(t_clean)
+
+    # ── 3. Add trending tags from research ─────────────────────────────────
     for t in research.get("trending_tags", []):
-        if t not in base:
-            base.append(t)
+        t_clean = t.strip().replace("#", "")
+        if t_clean and t_clean not in base:
+            base.append(t_clean)
 
-    # Add all niche pool tags
+    # ── 4. Add all niche pool tags ─────────────────────────────────────────
     for t in NICHE_TAGS.get(niche.lower(), NICHE_TAGS["general"]):
-        if t not in base:
-            base.append(t)
+        t_clean = t.strip().replace("#", "")
+        if t_clean and t_clean not in base:
+            base.append(t_clean)
 
-    # Universal high-traffic tags
-    universal = [
-        "viral", "trending", "youtube", "subscribe", "like", "comment",
-        "share", "video", "content", "creator", "india", "fyp", "foryou",
-        "explore", "reels", "instagram", "tiktok", "new", "today", "watch",
-        "entertainment", "fun", "amazing", "awesome", "insane", "mustsee",
-    ]
-    for t in universal:
-        if t not in base:
-            base.append(t)
-
-    limit = 25 if for_shorts else 500   # hashtag count limit
+    limit = 35 if for_shorts else 500   # hashtag count limit
     hashtags = [f"#{t.strip().replace(' ', '').replace('#', '')}" for t in base[:limit]]
     return " ".join(dict.fromkeys(hashtags))   # deduplicate, preserve order
 
@@ -1933,6 +1956,17 @@ def generate_metadata(video_title: str, transcript: str, idx: int,
         data = json.loads(raw)
         data["tags"] = tags
 
+        # ── Append fixed hashtag suffix to every title ────────────────────────
+        raw_title = data.get("title", "").strip()
+        suffix    = " " + _TITLE_HASHTAG_SUFFIX
+        if raw_title and not raw_title.endswith(_TITLE_HASHTAG_SUFFIX):
+            # Only append if it fits within YouTube's 100-char hard limit
+            if len(raw_title) + len(suffix) <= 100:
+                data["title"] = raw_title + suffix
+            else:
+                # Truncate title to make room for the suffix
+                data["title"] = raw_title[:100 - len(suffix)].rstrip() + suffix
+
         # ── Build rich description based on mode ──────────────────────────────
         if mode == "video":
             data["description"] = _build_video_description(
@@ -1988,6 +2022,14 @@ def generate_metadata(video_title: str, transcript: str, idx: int,
                 }
             options       = niche_titles.get(niche.lower(), [f"{topic[:40]} 🔥{suffix}", f"Must watch 👀{suffix}"])
             fallback_title = options[idx % len(options)]
+
+        # ── Append fixed hashtag suffix to fallback title too ────────────────
+        suffix = " " + _TITLE_HASHTAG_SUFFIX
+        if not fallback_title.endswith(_TITLE_HASHTAG_SUFFIX):
+            if len(fallback_title) + len(suffix) <= 100:
+                fallback_title = fallback_title + suffix
+            else:
+                fallback_title = fallback_title[:100 - len(suffix)].rstrip() + suffix
 
         if mode == "video":
             fallback_desc = _build_video_description(
@@ -2345,14 +2387,26 @@ def transcribe(audio: Path, caption_lang: str = "en") -> list:
     body += (f'--{bd}\r\nContent-Disposition: form-data; name="file"; '
              f'filename="{audio.name}"\r\nContent-Type: {mime}\r\n\r\n')
     body_b = body.encode()+ab+f'\r\n--{bd}--\r\n'.encode()
+    groq_key = os.getenv('GROQ_API_KEY', '')
+    if not groq_key:
+        log.debug("[Captions] No GROQ_API_KEY set — skipping transcription")
+        return []
     try:
         req = urllib.request.Request("https://api.groq.com/openai/v1/audio/transcriptions",
             data=body_b,
-            headers={"Authorization":f"Bearer {os.getenv('GROQ_API_KEY', '')}",
+            headers={"Authorization":f"Bearer {groq_key}",
                      "Content-Type":f"multipart/form-data; boundary={bd}"},
             method="POST")
         with urllib.request.urlopen(req,timeout=60) as r:
             return json.loads(r.read()).get("words",[])
+    except urllib.error.HTTPError as e:
+        if e.code == 403:
+            log.warning("[Captions] Groq 403 Forbidden — key invalid or billing issue. Captions disabled for this run.")
+        elif e.code == 429:
+            log.warning("[Captions] Groq 429 rate-limited — no captions this clip.")
+        else:
+            log.warning(f"[Captions] HTTP {e.code}: {e}")
+        return []
     except Exception as e:
         log.warning(f"[Captions] {e}"); return []
 
@@ -2611,9 +2665,20 @@ def process_video_clips(video_path: Path, title_base: str, niche: str,
 #  VIDEOS  = mode=="video"  → original aspect → no #shorts anywhere
 # ══════════════════════════════════════════════════════════════════════════════
 
+# Errors that mean the channel/token cannot upload at all right now
+_UPLOAD_QUOTA_REASONS = {
+    "uploadLimitExceeded",  # daily upload cap hit
+    "forbidden",            # channel not enabled for uploads / API quota
+    "quotaExceeded",        # YouTube Data API quota drained
+}
+
+class UploadQuotaError(Exception):
+    """Raised when YouTube reports a hard upload-limit that won't recover until tomorrow."""
+
 def upload_one(yt, item: dict, sched: dict, num: int, total: int,
                privacy: str = "public") -> str:
     from googleapiclient.http import MediaFileUpload
+    from googleapiclient.errors import HttpError
 
     is_short = item.get("mode") == "shorts"
 
@@ -2660,12 +2725,32 @@ def upload_one(yt, item: dict, sched: dict, num: int, total: int,
     print(f"  [Upload {num}/{total}] {title[:50]}...")
     media = MediaFileUpload(item["path"], chunksize=1024*1024, resumable=True)
     req   = yt.videos().insert(part="snippet,status", body=body, media_body=media)
-    
-    resp = None
-    while resp is None:
-        status_req, resp = req.next_chunk()
-        if status_req: progress_bar(int(status_req.progress()*100),100,"Uploading")
-    
+
+    try:
+        resp = None
+        while resp is None:
+            status_req, resp = req.next_chunk()
+            if status_req: progress_bar(int(status_req.progress()*100),100,"Uploading")
+    except HttpError as e:
+        # Extract YouTube error reason from the JSON body
+        reason = ""
+        try:
+            import json as _json
+            err_body = _json.loads(e.content.decode("utf-8", errors="replace"))
+            details  = err_body.get("error", {}).get("errors", [{}])
+            reason   = details[0].get("reason", "") if details else ""
+        except Exception:
+            pass
+
+        if e.resp.status in (403, 400) and reason in _UPLOAD_QUOTA_REASONS:
+            # Hard quota — no point retrying any more videos today
+            raise UploadQuotaError(
+                f"YouTube upload quota hit: {reason} (HTTP {e.resp.status}). "
+                "Uploads suspended until midnight Pacific time."
+            ) from e
+        # Any other HTTP error — re-raise so upload_all can log it per-item
+        raise
+
     vid_id = resp.get("id")
     # Thumbnail
     if item.get("thumb_path") and os.path.exists(item["thumb_path"]):
@@ -2760,7 +2845,7 @@ def _rand_min_in_window(start_h: int, end_h: int,
     return (start_h + 1) % 24, 17
 
 
-def make_schedule(items: list, niche: str = "general") -> list:
+def make_schedule(items: list, niche: str = "general", channel_name: str = "") -> list:
     """
     Deep-research-based upload scheduler that maximises reach and retention.
 
@@ -2788,6 +2873,19 @@ def make_schedule(items: list, niche: str = "general") -> list:
     last_short    = now
     last_video    = now
     uploads_today = {}
+
+    schedule_file = None
+    if channel_name:
+        schedule_file = ACCOUNTS_DIR / channel_name / "last_schedule.txt"
+        if schedule_file.exists():
+            try:
+                last_dt_str = schedule_file.read_text(encoding="utf-8").strip()
+                last_dt = datetime.fromisoformat(last_dt_str)
+                if last_dt > now:
+                    last_short = last_dt
+                    last_video = last_dt
+            except Exception as e:
+                log.warning(f"Could not parse last schedule date: {e}")
 
     for i, item in enumerate(items):
         mode  = item.get("mode", "shorts")
@@ -2892,6 +2990,14 @@ def make_schedule(items: list, niche: str = "general") -> list:
             "reasoning" : reasoning,
         })
 
+    if schedule_file and out:
+        try:
+            max_dt = max(last_short, last_video)
+            schedule_file.parent.mkdir(parents=True, exist_ok=True)
+            schedule_file.write_text(max_dt.isoformat(), encoding="utf-8")
+        except Exception as e:
+            log.warning(f"Could not save last schedule date: {e}")
+
     return out
 
 
@@ -2907,7 +3013,7 @@ def upload_all(items: list, channel: dict, privacy: str = "public") -> list:
         print(f"  {C.YELLOW}⚡ Encoder: CPU (libx264) — no GPU detected{C.RESET}")
 
     # ── Algorithm-aware schedule ───────────────────────────────────────────────
-    sched        = make_schedule(items, niche=niche)
+    sched        = make_schedule(items, niche=niche, channel_name=ch_name)
     shorts_count = sum(1 for x in items if x.get("mode") == "shorts")
     videos_count = sum(1 for x in items if x.get("mode") == "video")
 
@@ -2939,8 +3045,13 @@ def upload_all(items: list, channel: dict, privacy: str = "public") -> list:
 
     yt      = _yt_client_for_channel(channel)
     results = []
+    quota_hit = False
     for i, item in enumerate(items):
         kind = "Short" if item.get("mode") == "shorts" else "Video"
+
+        if quota_hit:
+            warn(f"Skipping upload #{i+1}: {item['title'][:50]} — YouTube daily quota already exhausted")
+            continue
 
         # ── Remote control: check for pause / skip from Telegram ───────────────
         _TG.wait_if_paused()
@@ -2966,10 +3077,21 @@ def upload_all(items: list, channel: dict, privacy: str = "public") -> list:
             # ── Telegram: per-upload notification ─────────────────────────────
             _TG.send_upload_notification(item, vid, sched[i]["ist"], i+1, len(items))
             time.sleep(2)
+        except UploadQuotaError as e:
+            log.error(f"  ✗ YouTube quota exhausted: {e}")
+            _TG.send_message(
+                f"🚫 <b>Upload quota hit!</b>\n"
+                f"Uploaded {len(results)}/{len(items)} before limit.\n"
+                f"Remaining {len(items)-i} video(s) skipped.\n"
+                f"Quota resets midnight Pacific time."
+            )
+            quota_hit = True   # stop trying — all remaining will fail too
         except Exception as e:
             log.error(f"  ✗ Upload failed: {e}")
 
     ok(f"{len(results)}/{len(items)} uploaded")
+    if quota_hit:
+        warn("YouTube daily upload quota was hit — some videos were not uploaded. They remain in output/ for next run.")
     _TG.send_session_end(len(results), len(items))
     return results
 
@@ -3298,11 +3420,13 @@ def save_report(results: list, channel: dict, session: dict):
     r = {"run_at":str(datetime.now()),"channel":channel.get("real_name",""),
          "content":session.get("ct_label",""),"captions":session.get("add_captions",False),
          "total":len(results),"items":results}
-    for d in [MANIFEST,DESKTOP]:
+         
+    ch = channel.get("real_name",channel.get("label",""))
+    chan_manifest = ACCOUNTS_DIR / ch / "upload_manifest.json"
+    
+    for d in [MANIFEST, chan_manifest]:
         d.parent.mkdir(parents=True,exist_ok=True)
         d.write_text(json.dumps(r,indent=2),encoding="utf-8")
-
-    ch = channel.get("real_name",channel.get("label",""))
     print(f"""
 ╔══════════════════════════════════════════════════════════════╗
 ║           ✅  ALL TASKS COMPLETED SUCCESSFULLY  ✅            ║
@@ -3318,9 +3442,11 @@ def save_report(results: list, channel: dict, session: dict):
         print(f"║ {s[:62]:<62} ║")
         if r2.get("comment_prompt"): print(f"║ {c[:62]:<62} ║")
         print(f"║ {'─'*62} ║")
+    rpt1 = f"accounts/{ch}/upload_manifest.json"
+    rpt2 = f"ShortsBot/upload_manifest.json"
     print(f"""╠══════════════════════════════════════════════════════════════╣
-║  📄 Report: Desktop/upload_manifest.json                     ║
-║  📄 Report: C:/ShortsBot/upload_manifest.json                ║
+║  📄 Report: {rpt1[:44]:<44} ║
+║  📄 Report: {rpt2[:44]:<44} ║
 ║  💡 YouTube Studio → pin top comment on each upload NOW      ║
 ╚══════════════════════════════════════════════════════════════╝
 """)
